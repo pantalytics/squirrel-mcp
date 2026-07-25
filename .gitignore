@@ -1,0 +1,65 @@
+# OS
+.DS_Store
+._*
+Thumbs.db
+
+# Editors
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+.idea/
+*~
+*.swp
+
+# AI tools
+.mcp.json
+.cursor/
+.cursorrules
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.env
+.venv
+venv/
+
+# Testing & coverage
+htmlcov/
+.coverage
+.coverage.*
+.pytest_cache/
+coverage.xml
+
+# Type checkers
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+
+# Node / Playwright (e2e)
+node_modules/
+e2e/test-results/
+e2e/playwright-report/
+e2e/.playwright/
+
+# Environment files
+.env.local
+.env.*.local
+
+# Local-dev overlay from squirrel-mcp-admin (never commit).
+# In production this dir is populated by the admin repo's build.
+squirrel_mcp/admin/
+*.bak
+
+# Competitor screenshots kept locally for reference only (which mail providers
+# and IMAP/SMTP settings to support). Never publish these -- this repo is public.
+imapmcp/

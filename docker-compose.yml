@@ -1,0 +1,19 @@
+# Run Squirrel in a container over streamable-http.
+#
+#   cp .env.example .env      # fill in your mailbox credentials + IMAP/SMTP hosts
+#   docker compose up --build
+#
+# The MCP endpoint is then at http://localhost:8000/mcp. This transport has no
+# built-in auth -- keep it on localhost or put a reverse proxy in front of it.
+services:
+  squirrel:
+    build: .
+    container_name: squirrel-mcp
+    env_file: .env
+    environment:
+      SQUIRREL_MCP_TRANSPORT: streamable-http
+      SQUIRREL_MCP_HOST: 0.0.0.0
+      SQUIRREL_MCP_PORT: "8000"
+    ports:
+      - "8000:8000"
+    restart: unless-stopped

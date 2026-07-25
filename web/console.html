@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>🐿️ Squirrel MCP Console</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { max-width: 780px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; }
+  input { width: 22rem; max-width: 60vw; padding: .4rem; }
+  button { padding: .4rem .8rem; cursor: pointer; }
+  .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: .6rem 0; }
+  #status { font-weight: 600; }
+  ul { margin: .3rem 0; }
+  code { background: rgba(127,127,127,.15); padding: .1rem .3rem; border-radius: 4px; }
+  .panel { border: 1px solid rgba(127,127,127,.3); border-radius: 8px; padding: .8rem; margin: .8rem 0; }
+</style>
+</head>
+<body>
+  <h1>🐿️ Squirrel MCP Console</h1>
+  <p>A tiny browser client that speaks MCP streamable-http to a running Squirrel server.
+     Used by the Playwright end-to-end test.</p>
+
+  <div class="row">
+    <label for="url">Server URL</label>
+    <input id="url" value="http://localhost:8000/mcp" />
+    <button id="connect">Connect &amp; list tools</button>
+  </div>
+  <div class="row">Status: <span id="status" data-state="idle">idle</span></div>
+
+  <div class="panel">
+    <strong>Tools</strong>
+    <ul id="tools"></ul>
+  </div>
+
+  <div class="row">
+    <button id="listFolders" disabled>Call mail_list_folders</button>
+  </div>
+  <div class="panel">
+    <strong>Result</strong>
+    <ul id="result"></ul>
+  </div>
+
+<script>
+let sessionId = null;
+
+async function rpc(url, body) {
+  const headers = { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" };
+  if (sessionId) headers["mcp-session-id"] = sessionId;
+  const resp = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  const sid = resp.headers.get("mcp-session-id");
+  if (sid) sessionId = sid;
+  const text = await resp.text();
+  if (!text.trim()) return { status: resp.status, json: null };
+  let payload = text;
+  if (text.slice(0, 16).includes("data:")) {
+    const line = text.split("\n").find(l => l.startsWith("data:"));
+    payload = line ? line.slice(5).trim() : "{}";
+  }
+  return { status: resp.status, json: JSON.parse(payload) };
+}
+
+function setStatus(state, text) {
+  const el = document.getElementById("status");
+  el.dataset.state = state;
+  el.textContent = text;
+}
+
+document.getElementById("connect").addEventListener("click", async () => {
+  const url = document.getElementById("url").value.trim();
+  const tools = document.getElementById("tools");
+  tools.innerHTML = "";
+  sessionId = null;
+  try {
+    setStatus("connecting", "connecting…");
+    await rpc(url, { jsonrpc: "2.0", id: 1, method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "console", version: "0" } } });
+    await rpc(url, { jsonrpc: "2.0", method: "notifications/initialized" });
+    const { json } = await rpc(url, { jsonrpc: "2.0", id: 2, method: "tools/list" });
+    for (const t of json.result.tools) {
+      const li = document.createElement("li");
+      li.className = "tool";
+      li.dataset.name = t.name;
+      li.innerHTML = "<code>" + t.name + "</code>";
+      tools.appendChild(li);
+    }
+    document.getElementById("listFolders").disabled = false;
+    setStatus("connected", "connected (" + json.result.tools.length + " tools)");
+  } catch (e) {
+    setStatus("error", "error: " + e.message);
+  }
+});
+
+document.getElementById("listFolders").addEventListener("click", async () => {
+  const url = document.getElementById("url").value.trim();
+  const out = document.getElementById("result");
+  out.innerHTML = "";
+  try {
+    setStatus("calling", "calling mail_list_folders…");
+    const { json } = await rpc(url, { jsonrpc: "2.0", id: 3, method: "tools/call",
+      params: { name: "mail_list_folders", arguments: {} } });
+    const folders = (json.result.structuredContent || {}).folders || [];
+    for (const f of folders) {
+      const li = document.createElement("li");
+      li.className = "folder";
+      li.dataset.name = f.name;
+      li.textContent = f.name;
+      out.appendChild(li);
+    }
+    setStatus("done", "got " + folders.length + " folder(s)");
+  } catch (e) {
+    setStatus("error", "error: " + e.message);
+  }
+});
+</script>
+</body>
+</html>

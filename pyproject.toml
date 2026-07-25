@@ -1,0 +1,112 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "squirrel-mcp"
+version = "0.1.0"
+description = "Squirrel -- a local, sovereign personal-information hub as an MCP server. Own your mail, contacts and calendar; expose them to Claude and other AI tools without your data leaving your machine."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Pantalytics B.V.", email = "rutger@pantalytics.com" }
+]
+maintainers = [
+    { name = "Pantalytics B.V.", email = "rutger@pantalytics.com" }
+]
+license = { text = "Elastic-2.0" }
+keywords = [
+    "mcp", "model-context-protocol", "email", "imap", "smtp", "pim",
+    "ai", "llm", "claude", "anthropic", "soverin", "privacy", "self-hosted",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Topic :: Communications :: Email",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "mcp>=1.27.2,<2",
+    "imap-tools>=1.7.0",
+    "caldav>=1.3.0",
+    "icalendar>=5.0.0",
+    "vobject>=0.9.6",
+    "httpx>=0.28.1",
+    "python-dotenv>=1.2.2",
+    "pydantic>=2.13.4",
+    "uvicorn>=0.30",
+]
+
+[project.urls]
+Homepage = "https://github.com/pantalytics/squirrel-mcp"
+Repository = "https://github.com/pantalytics/squirrel-mcp"
+Issues = "https://github.com/pantalytics/squirrel-mcp/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1.0",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ty>=0.0.49",
+    "ruff>=0.15.16",
+]
+
+[project.scripts]
+squirrel-mcp = "squirrel_mcp.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["squirrel_mcp"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+pythonpath = ["."]
+markers = [
+    "integration: marks tests as integration tests (need a real mailbox; deselect with '-m \"not integration\"')",
+]
+
+[tool.coverage.run]
+source = ["squirrel_mcp"]
+omit = ["tests/*", "*/__pycache__/*", "*/__init__.py"]
+
+[tool.ty.environment]
+python-version = "3.10"
+
+[tool.ty.src]
+include = ["squirrel_mcp/"]
+exclude = ["venv/", ".venv/", "build/", "dist/"]
+
+[tool.ty.rules]
+possibly-unresolved-reference = "warn"
+invalid-argument-type = "ignore"
+invalid-parameter-default = "error"
+invalid-return-type = "warn"
+invalid-assignment = "warn"
+unresolved-attribute = "ignore"
+# caldav / vobject ship no type information, so their members resolve to `object`.
+invalid-type-form = "ignore"
+call-non-callable = "ignore"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "B", "Q"]
+ignore = ["E501", "N818"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[dependency-groups]
+dev = [
+    "ty>=0.0.49",
+]

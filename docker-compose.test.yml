@@ -1,0 +1,63 @@
+# Local test mail server for Squirrel's end-to-end tests.
+#
+# GreenMail is a real IMAP + SMTP server, so the e2e tests exercise Squirrel's
+# actual mail path -- no real mailbox credentials, no secrets, reproducible in CI.
+#
+#   docker compose -f docker-compose.test.yml up -d greenmail
+#   pytest -m integration
+#   docker compose -f docker-compose.test.yml down
+#
+# Plaintext on the offset ports (3143 IMAP, 3025 SMTP): the tests set
+# SQUIRREL_IMAP_SECURITY=plain / SQUIRREL_SMTP_SECURITY=plain to match.
+services:
+  greenmail:
+    image: greenmail/standalone:2.1.0
+    container_name: squirrel-greenmail
+    environment:
+      # Pre-create the test account and start all services on the 3xxx ports.
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.all
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=squirrel:squirrelpass@example.com
+        -Dgreenmail.verbose
+    ports:
+      - "3025:3025"   # SMTP
+      - "3143:3143"   # IMAP
+      - "3465:3465"   # SMTPS
+      - "3993:3993"   # IMAPS
+      - "8080:8080"   # REST API
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/3143"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  # Squirrel over streamable-http, wired to GreenMail. This is the full-stack
+  # target for the Docker smoke test and the Playwright browser e2e.
+  squirrel:
+    build: .
+    container_name: squirrel-mcp-test
+    depends_on:
+      greenmail:
+        condition: service_healthy
+    environment:
+      SQUIRREL_MAIL_PROVIDER: imap
+      SQUIRREL_MAIL_EMAIL: squirrel@example.com
+      SQUIRREL_MAIL_USERNAME: squirrel
+      SQUIRREL_MAIL_PASSWORD: squirrelpass
+      SQUIRREL_IMAP_HOST: greenmail
+      SQUIRREL_IMAP_PORT: "3143"
+      SQUIRREL_SMTP_HOST: greenmail
+      SQUIRREL_SMTP_PORT: "3025"
+      SQUIRREL_IMAP_SECURITY: plain
+      SQUIRREL_SMTP_SECURITY: plain
+      SQUIRREL_TLS_VERIFY: "false"
+      SQUIRREL_MCP_TRANSPORT: streamable-http
+      SQUIRREL_MCP_HOST: 0.0.0.0
+      SQUIRREL_MCP_PORT: "8000"
+      # Allow the Playwright test console (different origin) to call /mcp.
+      SQUIRREL_DEV_CORS: "true"
+    ports:
+      - "8000:8000"
+    restart: on-failure

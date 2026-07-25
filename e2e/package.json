@@ -1,0 +1,13 @@
+{
+  "name": "squirrel-mcp-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright browser e2e for the Squirrel MCP server",
+  "scripts": {
+    "test": "playwright test",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}
