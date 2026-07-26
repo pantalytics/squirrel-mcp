@@ -8,7 +8,7 @@ tracking; standalone they return the single env-configured provider.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from mcp.server.fastmcp import FastMCP
 
@@ -58,6 +58,20 @@ class MailToolHandler(
             _current_sub.set("stdio")
             return self.provider, "stdio"
         raise ValidationError("No mail provider available")
+
+    async def _list_accounts(self) -> List[dict]:
+        """The email accounts this server can resolve, for ``mail_list_accounts``.
+
+        Admin hook: the private package overrides this to list the workspace's
+        configured accounts. Standalone there is exactly one -- the env-configured
+        mailbox -- and it is always the default.
+        """
+        email = ""
+        if self.provider is not None:
+            email = getattr(self.provider, "email", "") or ""
+        if not email and self.config is not None:
+            email = self.config.mail_email or ""
+        return [{"id": "default", "email": email, "default": True}]
 
     def _track_usage(self, sub: str, tool_name: str) -> None:
         """Usage-tracking hook. No-op here; overridden by the admin package."""

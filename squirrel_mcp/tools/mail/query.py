@@ -30,6 +30,7 @@ class QueryToolsMixin:
             offset: int = 0,
             unseen_only: bool = False,
             since: Optional[str] = None,
+            account: Optional[str] = None,
         ) -> SearchResult:
             """Search one folder, newest first.
 
@@ -42,11 +43,13 @@ class QueryToolsMixin:
                 offset: Number of messages to skip (for paging).
                 unseen_only: If true, only unread messages.
                 since: ISO date (YYYY-MM-DD) lower bound on the message date.
+                account: Which email account to search (id or address from
+                    mail_list_accounts). Omit when only one is configured.
 
             The mailbox can be large -- page with limit/offset rather than pulling
             everything. ``total`` tells you how many match in this folder.
             """
-            provider, sub = await self._get_provider()
+            provider, sub = await self._get_provider(account)
             default_limit = self.config.default_limit if self.config else 25
             max_limit = self.config.max_limit if self.config else 100
             eff_limit = default_limit if limit is None else limit

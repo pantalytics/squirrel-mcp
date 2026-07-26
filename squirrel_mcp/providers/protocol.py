@@ -116,6 +116,11 @@ class MailProvider(Protocol):
     @property
     def is_authenticated(self) -> bool: ...
 
+    @property
+    def email(self) -> str:
+        """The address mail from this provider is sent from (the From header)."""
+        ...
+
     def connect(self) -> None:
         """Open the connection and log in. Raises MailAuthError on bad creds."""
         ...

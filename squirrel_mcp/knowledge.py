@@ -11,6 +11,10 @@ tool families: `mail_*`, `contacts_*`, `calendar_*` (a family is only present wh
 that pillar is configured).
 
 Mail tools (all prefixed `mail_`):
+- mail_list_accounts: list the configured email accounts. Every mail tool takes
+  an optional `account` argument (id or address from here); omit it with a
+  single account, pass it explicitly when there are several -- and always tell
+  the user which address a message will be sent from.
 - mail_list_folders: list mailboxes/folders. Start here to learn folder names.
 - mail_search: search one folder, newest first. Paginate with limit/offset; the
   mailbox can be large, so never try to pull everything at once.
@@ -20,8 +24,10 @@ Mail tools (all prefixed `mail_`):
 - mail_get_attachment: download one attachment by its index (from mail_read).
 - mail_draft / mail_edit_draft: create or update a draft in the Drafts folder.
 - mail_send: send a message. DESTRUCTIVE/OUTGOING. It requires confirm=true and
-  will refuse otherwise. ALWAYS show the user the exact recipients, subject and
-  body and get explicit approval BEFORE calling it with confirm=true.
+  will refuse otherwise. ALWAYS show the user the exact recipients, subject,
+  body and the account it will be sent from, and get explicit approval BEFORE
+  calling it with confirm=true. The result's `from_address` is the address the
+  message actually went out from -- repeat it back to the user.
 - mail_move: move messages between folders. Requires confirm=true. Confirm with
   the user first, and double-check the destination folder name via mail_list_folders.
 
