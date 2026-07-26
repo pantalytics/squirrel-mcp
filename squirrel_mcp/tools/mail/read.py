@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from typing import Optional
 
 from mcp.types import ToolAnnotations
 
@@ -24,14 +25,17 @@ class ReadToolsMixin:
                 openWorldHint=False,
             ),
         )
-        async def mail_read(uid: str, folder: str = "INBOX") -> MailBody:
+        async def mail_read(
+            uid: str, folder: str = "INBOX", account: Optional[str] = None
+        ) -> MailBody:
             """Read one message by uid (from mail_search).
 
             Large bodies are truncated: ``is_truncated`` tells you whether to page
             the rest with mail_read_chunk. ``attachments`` lists downloadable parts
             by index (use mail_get_attachment). Does not mark the message read.
+            Pass the same ``account`` the uid came from (see mail_list_accounts).
             """
-            provider, sub = await self._get_provider()
+            provider, sub = await self._get_provider(account)
             max_chars = self.config.max_body_chars if self.config else 20000
             detail = await run_blocking(provider, provider.fetch_message, folder, uid)
             self._track_usage(sub, "mail_read")
@@ -75,13 +79,15 @@ class ReadToolsMixin:
             folder: str = "INBOX",
             offset: int = 0,
             length: int = 20000,
+            account: Optional[str] = None,
         ) -> MailChunk:
             """Fetch a slice of a large message body.
 
             Use after mail_read reports ``is_truncated``. Advance ``offset`` by the
-            returned ``length`` until ``has_more`` is false.
+            returned ``length`` until ``has_more`` is false. Pass the same
+            ``account`` mail_read used.
             """
-            provider, sub = await self._get_provider()
+            provider, sub = await self._get_provider(account)
             length = max(1, length)
             offset = max(0, offset)
             detail = await run_blocking(provider, provider.fetch_message, folder, uid)
@@ -112,9 +118,13 @@ class ReadToolsMixin:
             uid: str,
             folder: str = "INBOX",
             attachment_index: int = 0,
+            account: Optional[str] = None,
         ) -> AttachmentContent:
-            """Download one attachment (base64) by its index from mail_read."""
-            provider, sub = await self._get_provider()
+            """Download one attachment (base64) by its index from mail_read.
+
+            Pass the same ``account`` mail_read used (see mail_list_accounts).
+            """
+            provider, sub = await self._get_provider(account)
             payload = await run_blocking(
                 provider, provider.fetch_attachment, folder, uid, attachment_index
             )

@@ -23,6 +23,11 @@ class FakeMailProvider:
         self.sent: list = []
         self.moved: list = []
         self.drafts: list = []
+        self._email = "me@example.com"
+
+    @property
+    def email(self) -> str:
+        return self._email
 
     @property
     def is_authenticated(self) -> bool:

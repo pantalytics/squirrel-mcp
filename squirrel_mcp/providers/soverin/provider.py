@@ -45,8 +45,13 @@ class SoverinMailProvider:
             tls_verify=config.tls_verify,
         )
         self._drafts_folder = drafts_folder
+        self._email = config.mail_email
 
     # ---- lifecycle ------------------------------------------------------- #
+    @property
+    def email(self) -> str:
+        return self._email
+
     @property
     def is_authenticated(self) -> bool:
         return self._imap.is_authenticated

@@ -9,6 +9,19 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class MailAccount(BaseModel):
+    id: str = Field(description="Stable identifier; pass as the 'account' arg")
+    email: str = Field(description="The address mail from this account is sent from")
+    default: bool = Field(
+        default=False,
+        description="True when this account is used if 'account' is omitted",
+    )
+
+
+class MailAccountList(BaseModel):
+    accounts: List[MailAccount] = Field(description="Email accounts this server can resolve")
+
+
 class FolderInfo(BaseModel):
     name: str = Field(description="Folder / mailbox name (use this as the 'folder' arg)")
     delimiter: str = Field(description="Hierarchy delimiter used by the server")
@@ -84,12 +97,18 @@ class DraftResult(BaseModel):
     uid: str = Field(description="Uid of the saved draft (empty if the server hid it)")
     folder: str
     status: str = Field(description="Human-readable outcome")
+    from_address: Optional[str] = Field(
+        default=None, description="Address the draft will be sent from"
+    )
 
 
 class SendResult(BaseModel):
     status: str = Field(description="Human-readable outcome")
     message_id: Optional[str] = None
     recipients: List[str] = Field(default_factory=list)
+    from_address: Optional[str] = Field(
+        default=None, description="Address the message was sent from"
+    )
 
 
 class MoveResult(BaseModel):

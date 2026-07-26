@@ -31,13 +31,16 @@ class ComposeToolsMixin:
             cc: Optional[Any] = None,
             bcc: Optional[Any] = None,
             folder: str = "Drafts",
+            account: Optional[str] = None,
         ) -> DraftResult:
             """Save a new draft to the Drafts folder (nothing is sent).
 
             ``to``/``cc``/``bcc`` accept a list of addresses or a comma-separated
             string. Prefer drafting and letting the user review over sending directly.
+            ``account`` picks which configured email account the draft belongs to
+            (id or address from mail_list_accounts); omit with a single account.
             """
-            provider, sub = await self._get_provider(writes=True)
+            provider, sub = await self._get_provider(account, writes=True)
             recipients = as_str_list(to)
             if not recipients:
                 raise ValidationError("'to' is required (at least one recipient)")
@@ -52,7 +55,12 @@ class ComposeToolsMixin:
                 folder=folder,
             )
             self._track_usage(sub, "mail_draft")
-            return DraftResult(uid=uid, folder=folder, status="Draft saved")
+            return DraftResult(
+                uid=uid,
+                folder=folder,
+                status="Draft saved",
+                from_address=getattr(provider, "email", None) or None,
+            )
 
         @self.app.tool(
             title="Edit Draft",
@@ -71,12 +79,14 @@ class ComposeToolsMixin:
             cc: Optional[Any] = None,
             bcc: Optional[Any] = None,
             folder: str = "Drafts",
+            account: Optional[str] = None,
         ) -> DraftResult:
             """Replace an existing draft with new content. Returns the new uid.
 
             (The draft is rewritten, so the uid changes -- use the returned one.)
+            Pass the same ``account`` the draft was created in.
             """
-            provider, sub = await self._get_provider(writes=True)
+            provider, sub = await self._get_provider(account, writes=True)
             recipients = as_str_list(to)
             if not recipients:
                 raise ValidationError("'to' is required (at least one recipient)")
@@ -92,7 +102,12 @@ class ComposeToolsMixin:
                 bcc=as_str_list(bcc),
             )
             self._track_usage(sub, "mail_edit_draft")
-            return DraftResult(uid=new_uid, folder=folder, status="Draft updated")
+            return DraftResult(
+                uid=new_uid,
+                folder=folder,
+                status="Draft updated",
+                from_address=getattr(provider, "email", None) or None,
+            )
 
         @self.app.tool(
             title="Send Mail",
@@ -110,14 +125,17 @@ class ComposeToolsMixin:
             cc: Optional[Any] = None,
             bcc: Optional[Any] = None,
             confirm: bool = False,
+            account: Optional[str] = None,
         ) -> SendResult:
             """Send a message. OUTGOING -- requires confirm=true.
 
             Before calling with confirm=true, show the user the exact recipients,
             subject and body and get explicit approval. Without confirm=true this
-            refuses and sends nothing.
+            refuses and sends nothing. ``account`` picks which configured email
+            account to send from (id or address from mail_list_accounts) -- name
+            it to the user as part of the approval; omit with a single account.
             """
-            provider, sub = await self._get_provider(writes=True)
+            provider, sub = await self._get_provider(account, writes=True)
             recipients = as_str_list(to)
             if not recipients:
                 raise ValidationError("'to' is required (at least one recipient)")
@@ -136,4 +154,5 @@ class ComposeToolsMixin:
                 status="Sent",
                 message_id=result.get("message_id"),
                 recipients=result.get("recipients", []),
+                from_address=getattr(provider, "email", None) or None,
             )

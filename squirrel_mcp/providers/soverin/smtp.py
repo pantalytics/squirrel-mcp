@@ -18,6 +18,12 @@ from .mime import all_recipients, build_email
 
 logger = get_logger(__name__)
 
+# Per-connection-attempt timeout. The stdlib tries each resolved address in
+# turn, so a host with two A records behind a silently-dropping firewall costs
+# 2x this before the error surfaces -- keep it short enough that a blocked
+# port reads as a quick, clear failure rather than a minute of dead air.
+SMTP_TIMEOUT = 10
+
 
 class SoverinSmtpClient:
     """Thin SMTP sender. One connection per send (simple and robust)."""
@@ -71,8 +77,21 @@ class SoverinSmtpClient:
             self._deliver(msg, recipients)
         except smtplib.SMTPAuthenticationError as exc:
             raise MailAuthError(f"SMTP authentication failed: {exc}") from exc
-        except (smtplib.SMTPException, OSError) as exc:
+        except smtplib.SMTPException as exc:
             raise MailProviderError(f"Sending failed: {exc}") from exc
+        except OSError as exc:
+            # A socket-level failure is a reachability problem, not a message
+            # problem. Name the endpoint: "Network is unreachable" against a
+            # host whose IMAP works fine means the SMTP *port* is blocked
+            # somewhere on the path (hosting providers commonly block outbound
+            # 25/465), and the settings the user would otherwise re-check are
+            # not the fault.
+            raise MailProviderError(
+                f"Could not reach SMTP server {self._host}:{self._port} ({exc}). "
+                f"The host may be down or this port blocked along the way -- if "
+                f"reading mail works, the credentials and host are fine; try the "
+                f"provider's STARTTLS port (587) or check outbound-SMTP blocking."
+            ) from exc
 
         logger.info("Sent message %s to %d recipient(s)", message_id, len(recipients))
         return {"message_id": message_id, "recipients": recipients}
@@ -80,13 +99,13 @@ class SoverinSmtpClient:
     def _deliver(self, msg: EmailMessage, recipients: List[str]) -> None:
         if self._security == "ssl":
             with smtplib.SMTP_SSL(
-                self._host, self._port, timeout=30, context=self._ssl_context()
+                self._host, self._port, timeout=SMTP_TIMEOUT, context=self._ssl_context()
             ) as server:
                 server.login(self._username, self._password)
                 server.send_message(msg, from_addr=self._email, to_addrs=recipients)
             return
 
-        with smtplib.SMTP(self._host, self._port, timeout=30) as server:
+        with smtplib.SMTP(self._host, self._port, timeout=SMTP_TIMEOUT) as server:
             server.ehlo()
             if self._security == "starttls":
                 server.starttls(context=self._ssl_context())
