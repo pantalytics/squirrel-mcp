@@ -54,6 +54,26 @@ All writes require `confirm=true`. Both pillars reuse the same account credentia
 as mail (most providers let one password cover IMAP/SMTP, CardDAV and CalDAV) and
 lean on the mature `caldav` + `icalendar` + `vobject` libraries.
 
+## Or skip the install: Squirrel in your browser
+
+Everything below runs on your own machine. If you'd rather not host anything,
+[squirrel.pantalytics.com](https://squirrel.pantalytics.com) is the hosted
+version of this package: create an account, connect your AI client, add a
+mailbox — same three pillars, same open protocols, free while in beta.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/home-onboarding.png" alt="Home: onboarding line from sign-up to your first question" width="270"><br><sub>Home walks you from sign-up to your first question.</sub></td>
+    <td align="center"><img src="docs/screenshots/add-connector.png" alt="Add connector: pick Claude, ChatGPT, Le Chat, Copilot Studio or n8n" width="270"><br><sub>Pick the AI you want to connect — Claude, ChatGPT, Le Chat, n8n, …</sub></td>
+    <td align="center"><img src="docs/screenshots/ai-connectors.png" alt="AI connectors: Claude connected with live tool-call count" width="270"><br><sub>The connector turns green on its first call, with live usage.</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/accounts.png" alt="Accounts: the mailboxes, calendars and contacts your AI can access" width="270"><br><sub>Accounts: the email, calendar and contacts accounts your AI can access.</sub></td>
+    <td align="center"><img src="docs/screenshots/account-services.png" alt="Per-account switches for Mail (IMAP/SMTP), Contacts (CardDAV) and Calendar (CalDAV)" width="270"><br><sub>Each service is its own open protocol — flip Mail, Contacts and Calendar on per account.</sub></td>
+    <td align="center"><img src="docs/screenshots/menu.png" alt="The Squirrel MCP menu" width="270"><br><sub>Free while in beta, every tool included.</sub></td>
+  </tr>
+</table>
+
 ## Install
 
 ```bash
