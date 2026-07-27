@@ -17,7 +17,9 @@ Mail tools (all prefixed `mail_`):
   the user which address a message will be sent from.
 - mail_list_folders: list mailboxes/folders. Start here to learn folder names.
 - mail_search: search one folder, newest first. Paginate with limit/offset; the
-  mailbox can be large, so never try to pull everything at once.
+  mailbox can be large, so never try to pull everything at once. `unseen_only`
+  and `flagged_only` narrow it server-side -- use `flagged_only=true` to answer
+  "what have I flagged", rather than paging the folder and sifting yourself.
 - mail_read: read one message by uid. Large bodies are truncated -- the response
   tells you the total length and how to page the rest.
 - mail_read_chunk: fetch the next slice of a large body (offset + length).
@@ -30,6 +32,11 @@ Mail tools (all prefixed `mail_`):
   message actually went out from -- repeat it back to the user.
 - mail_move: move messages between folders. Requires confirm=true. Confirm with
   the user first, and double-check the destination folder name via mail_list_folders.
+- mail_flag: set or clear the \\Flagged marker -- the star every mail client
+  draws -- on messages in a folder. `flagged=false` takes it back off. No
+  confirmation needed, because it changes no message and is reversible by the
+  same tool, so it is the natural way to mark things for the user to follow up
+  on. Flagged messages come back from mail_search with "\\Flagged" in `flags`.
 
 Contacts tools (`contacts_*`, CardDAV): contacts_list_addressbooks · contacts_search
 (paginated) · contacts_read · contacts_create / contacts_update / contacts_delete

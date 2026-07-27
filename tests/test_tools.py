@@ -20,6 +20,7 @@ EXPECTED_TOOLS = {
     "mail_edit_draft",
     "mail_send",
     "mail_move",
+    "mail_flag",
 }
 
 
@@ -51,6 +52,17 @@ async def test_send_and_move_are_destructive(app_with_tools):
     assert tools["mail_send"].annotations.destructiveHint is True
     assert tools["mail_move"].annotations.destructiveHint is True
     assert tools["mail_search"].annotations.readOnlyHint is True
+
+
+async def test_flag_is_a_write_but_not_destructive(app_with_tools):
+    """A flag is metadata you can take straight back off, so it announces
+    itself as a non-destructive, idempotent write -- and needs no confirm=."""
+    tools = {t.name: t for t in await app_with_tools.list_tools()}
+    flag = tools["mail_flag"]
+    assert flag.annotations.readOnlyHint is False
+    assert flag.annotations.destructiveHint is False
+    assert flag.annotations.idempotentHint is True
+    assert "confirm" not in flag.inputSchema.get("properties", {})
 
 
 async def test_list_folders_call(app_with_tools):
@@ -98,6 +110,37 @@ async def test_mail_tools_accept_an_account_argument(app_with_tools):
         "mail_list_folders", {"account": "default"}
     )
     assert "INBOX" in str(result)
+
+
+async def test_flag_round_trip_shows_up_in_search(app_with_tools, fake_provider):
+    """Setting the flag is only useful if it is then visible: flag, see
+    \\Flagged come back from mail_search, unflag, see it gone again."""
+    await app_with_tools.call_tool("mail_flag", {"uids": "101", "folder": "INBOX"})
+    assert fake_provider.flagged == {"101"}
+    assert "\\\\Flagged" in str(await app_with_tools.call_tool("mail_search", {}))
+
+    await app_with_tools.call_tool(
+        "mail_flag", {"uids": ["101"], "folder": "INBOX", "flagged": False}
+    )
+    assert fake_provider.flagged == set()
+    assert "\\\\Flagged" not in str(await app_with_tools.call_tool("mail_search", {}))
+
+
+async def test_search_can_narrow_to_flagged_messages(app_with_tools):
+    """"What have I flagged" is a filter, not a folder scan the client sifts."""
+    empty = await app_with_tools.call_tool("mail_search", {"flagged_only": True})
+    assert "'total': 0" in str(empty) and "\\\\Flagged" not in str(empty)
+
+    await app_with_tools.call_tool("mail_flag", {"uids": "101", "folder": "INBOX"})
+    found = await app_with_tools.call_tool("mail_search", {"flagged_only": True})
+    assert "\\\\Flagged" in str(found)
+
+
+async def test_flag_requires_at_least_one_uid(app_with_tools, fake_provider):
+    with pytest.raises(Exception) as exc:
+        await app_with_tools.call_tool("mail_flag", {"uids": "", "folder": "INBOX"})
+    assert "uids" in str(exc.value)
+    assert fake_provider.flagged == set()
 
 
 async def test_draft_reports_the_from_address(app_with_tools):

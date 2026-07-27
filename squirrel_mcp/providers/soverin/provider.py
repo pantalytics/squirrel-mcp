@@ -75,6 +75,7 @@ class SoverinMailProvider:
         query: Optional[str] = None,
         *,
         unseen_only: bool = False,
+        flagged_only: bool = False,
         since: Optional[str] = None,
         limit: int = 25,
         offset: int = 0,
@@ -83,6 +84,7 @@ class SoverinMailProvider:
             folder,
             query,
             unseen_only=unseen_only,
+            flagged_only=flagged_only,
             since=since,
             limit=limit,
             offset=offset,
@@ -94,7 +96,7 @@ class SoverinMailProvider:
     def fetch_attachment(self, folder: str, uid: str, index: int) -> AttachmentPayload:
         return self._imap.fetch_attachment(folder, uid, index)
 
-    # ---- draft / move (IMAP) -------------------------------------------- #
+    # ---- draft / move / flag (IMAP) -------------------------------------- #
     def save_draft(
         self,
         to: List[str],
@@ -122,6 +124,9 @@ class SoverinMailProvider:
 
     def move(self, folder: str, uids: List[str], destination: str) -> int:
         return self._imap.move(folder, uids, destination)
+
+    def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
+        return self._imap.flag(folder, uids, flagged)
 
     # ---- send (SMTP) ----------------------------------------------------- #
     def send(

@@ -143,6 +143,7 @@ class MailProvider(Protocol):
         query: Optional[str] = None,
         *,
         unseen_only: bool = False,
+        flagged_only: bool = False,
         since: Optional[str] = None,
         limit: int = 25,
         offset: int = 0,
@@ -150,7 +151,9 @@ class MailProvider(Protocol):
         """Search a folder. Returns (page of summaries, total matching count).
 
         ``query`` is free text matched against the message (subject/body/headers).
-        ``since`` is an ISO date (YYYY-MM-DD) lower bound. Newest first.
+        ``flagged_only`` narrows to messages carrying ``\\Flagged`` (see
+        ``flag``). ``since`` is an ISO date (YYYY-MM-DD) lower bound. Newest
+        first.
         """
         ...
 
@@ -203,6 +206,15 @@ class MailProvider(Protocol):
 
     def move(self, folder: str, uids: List[str], destination: str) -> int:
         """Move messages from ``folder`` to ``destination``. Returns count moved."""
+        ...
+
+    def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
+        """Set or clear the ``\\Flagged`` marker on messages. Returns count changed.
+
+        The marker every mail client draws as a star/flag. Setting it on an
+        already-flagged message is a no-op, not an error -- the operation is
+        idempotent, and so is clearing it.
+        """
         ...
 
 

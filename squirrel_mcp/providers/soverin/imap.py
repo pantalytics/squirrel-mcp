@@ -22,7 +22,8 @@ from imap_tools import (
     MailBoxUnencrypted,
     MailMessageFlags,
 )
-from imap_tools.errors import MailboxLoginError
+from imap_tools.errors import MailboxFlagError, MailboxLoginError
+from imap_tools.utils import check_command_status, clean_uids
 
 from ...logging_config import get_logger
 from ..protocol import (
@@ -151,11 +152,12 @@ class SoverinImapClient:
         query: Optional[str] = None,
         *,
         unseen_only: bool = False,
+        flagged_only: bool = False,
         since: Optional[str] = None,
         limit: int = 25,
         offset: int = 0,
     ) -> Tuple[List[MessageSummary], int]:
-        criteria = self._build_criteria(query, unseen_only, since)
+        criteria = self._build_criteria(query, unseen_only, flagged_only, since)
         charset = "UTF-8" if query else "US-ASCII"
 
         def op(mb: BaseMailBox) -> Tuple[List[MessageSummary], int]:
@@ -268,6 +270,37 @@ class SoverinImapClient:
 
         return self._run(op)
 
+    def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
+        # Deliberately a raw UID STORE rather than imap_tools' ``mb.flag``:
+        # that helper follows every STORE with an EXPUNGE, which permanently
+        # removes anything another client left marked \Deleted in this folder.
+        # Flagging is meant to be the one mail write you can undo, so it does
+        # not get to delete messages as a side effect.
+        try:
+            # Rejects anything that is not a bare uid, so a crafted argument
+            # cannot smuggle extra IMAP into the STORE command below.
+            cleaned = clean_uids(uids)
+        except TypeError as exc:
+            raise MailProviderError(f"Invalid message uid: {exc}") from exc
+        if not cleaned:
+            return 0
+
+        def op(mb: BaseMailBox) -> int:
+            self._select(mb, folder)
+            result = mb.client.uid(
+                "STORE",
+                ",".join(cleaned),
+                ("+" if flagged else "-") + "FLAGS",
+                f"({MailMessageFlags.FLAGGED})",
+            )
+            try:
+                check_command_status(result, MailboxFlagError)
+            except MailboxFlagError as exc:
+                raise MailProviderError(f"Could not update flags: {exc}") from exc
+            return len(cleaned)
+
+        return self._run(op)
+
     # ---- helpers --------------------------------------------------------- #
     @staticmethod
     def _select(mb: MailBox, folder: str) -> None:
@@ -277,12 +310,19 @@ class SoverinImapClient:
             raise MailNotFoundError(f"Folder {folder!r} not found: {exc}") from exc
 
     @staticmethod
-    def _build_criteria(query: Optional[str], unseen_only: bool, since: Optional[str]):
+    def _build_criteria(
+        query: Optional[str], unseen_only: bool, flagged_only: bool, since: Optional[str]
+    ):
         kwargs: dict = {}
         if query:
             kwargs["text"] = query
         if unseen_only:
             kwargs["seen"] = False
+        if flagged_only:
+            # Only ever set when asked: ``flagged=False`` is not "no filter",
+            # it is UNFLAGGED -- the exact opposite of what an omitted argument
+            # should mean.
+            kwargs["flagged"] = True
         if since:
             try:
                 kwargs["date_gte"] = datetime.date.fromisoformat(since)

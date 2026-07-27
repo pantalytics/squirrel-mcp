@@ -23,6 +23,9 @@ class FakeMailProvider:
         self.sent: list = []
         self.moved: list = []
         self.drafts: list = []
+        # Uids currently carrying \Flagged, so search/fetch report what flag()
+        # did and a set-then-clear round trip is actually observable.
+        self.flagged: set = set()
         self._email = "me@example.com"
 
     @property
@@ -51,10 +54,13 @@ class FakeMailProvider:
         query: Optional[str] = None,
         *,
         unseen_only: bool = False,
+        flagged_only: bool = False,
         since: Optional[str] = None,
         limit: int = 25,
         offset: int = 0,
     ) -> Tuple[List[MessageSummary], int]:
+        if flagged_only and "101" not in self.flagged:
+            return [], 0
         msg = MessageSummary(
             uid="101",
             folder=folder,
@@ -62,7 +68,7 @@ class FakeMailProvider:
             from_addr="Anna <anna@example.com>",
             to_addrs=["me@example.com"],
             date="Mon, 01 Jan 2026 10:00:00 +0000",
-            flags=["\\Seen"],
+            flags=["\\Seen"] + (["\\Flagged"] if "101" in self.flagged else []),
             size=1234,
             has_attachments=True,
             preview="Hi there, this is a preview.",
@@ -78,7 +84,7 @@ class FakeMailProvider:
             to_addrs=["me@example.com"],
             cc_addrs=[],
             date="Mon, 01 Jan 2026 10:00:00 +0000",
-            flags=["\\Seen"],
+            flags=["\\Seen"] + (["\\Flagged"] if uid in self.flagged else []),
             message_id="<abc@example.com>",
             body_text="Hello world. " * 100,
             body_length=len("Hello world. " * 100),
@@ -105,6 +111,14 @@ class FakeMailProvider:
 
     def move(self, folder, uids, destination) -> int:
         self.moved.append((folder, uids, destination))
+        return len(uids)
+
+    def flag(self, folder, uids, flagged: bool = True) -> int:
+        for uid in uids:
+            if flagged:
+                self.flagged.add(uid)
+            else:
+                self.flagged.discard(uid)
         return len(uids)
 
 

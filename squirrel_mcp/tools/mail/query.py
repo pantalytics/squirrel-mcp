@@ -29,6 +29,7 @@ class QueryToolsMixin:
             limit: Optional[int] = None,
             offset: int = 0,
             unseen_only: bool = False,
+            flagged_only: bool = False,
             since: Optional[str] = None,
             account: Optional[str] = None,
         ) -> SearchResult:
@@ -42,6 +43,10 @@ class QueryToolsMixin:
                 limit: Page size. Defaults to the server default, capped at the max.
                 offset: Number of messages to skip (for paging).
                 unseen_only: If true, only unread messages.
+                flagged_only: If true, only messages carrying the \\Flagged
+                    marker (set with mail_flag). This is the way to answer
+                    "what have I flagged" -- the server does the filtering, so
+                    do not page a whole folder and sift it yourself.
                 since: ISO date (YYYY-MM-DD) lower bound on the message date.
                 account: Which email account to search (id or address from
                     mail_list_accounts). Omit when only one is configured.
@@ -62,6 +67,7 @@ class QueryToolsMixin:
                 folder,
                 query,
                 unseen_only=unseen_only,
+                flagged_only=flagged_only,
                 since=since,
                 limit=eff_limit,
                 offset=eff_offset,

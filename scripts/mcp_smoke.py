@@ -24,6 +24,7 @@ EXPECTED_TOOLS = {
     "mail_edit_draft",
     "mail_send",
     "mail_move",
+    "mail_flag",
 }
 
 
