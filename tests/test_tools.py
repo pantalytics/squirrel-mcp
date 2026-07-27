@@ -126,6 +126,16 @@ async def test_flag_round_trip_shows_up_in_search(app_with_tools, fake_provider)
     assert "\\\\Flagged" not in str(await app_with_tools.call_tool("mail_search", {}))
 
 
+async def test_search_can_narrow_to_flagged_messages(app_with_tools):
+    """"What have I flagged" is a filter, not a folder scan the client sifts."""
+    empty = await app_with_tools.call_tool("mail_search", {"flagged_only": True})
+    assert "'total': 0" in str(empty) and "\\\\Flagged" not in str(empty)
+
+    await app_with_tools.call_tool("mail_flag", {"uids": "101", "folder": "INBOX"})
+    found = await app_with_tools.call_tool("mail_search", {"flagged_only": True})
+    assert "\\\\Flagged" in str(found)
+
+
 async def test_flag_requires_at_least_one_uid(app_with_tools, fake_provider):
     with pytest.raises(Exception) as exc:
         await app_with_tools.call_tool("mail_flag", {"uids": "", "folder": "INBOX"})

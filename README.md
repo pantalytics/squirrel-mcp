@@ -29,7 +29,7 @@ is configured.
 | Tool | What it does | Safe? |
 |------|--------------|-------|
 | `mail_list_folders` | List mailboxes/folders | read-only |
-| `mail_search` | Search a folder, paginated (large mailboxes OK) | read-only |
+| `mail_search` | Search a folder, paginated; filter unread / flagged | read-only |
 | `mail_read` | Read one message (large bodies are truncated) | read-only |
 | `mail_read_chunk` | Fetch the next slice of a large body | read-only |
 | `mail_get_attachment` | Download one attachment | read-only |
@@ -37,6 +37,10 @@ is configured.
 | `mail_send` | Send a message — **requires `confirm=true`** | ⚠️ outgoing |
 | `mail_move` | Move messages between folders — **requires `confirm=true`** | ⚠️ mutating |
 | `mail_flag` | Flag / unflag messages — the star, `flagged=false` clears it | reversible |
+
+Flagging and finding are two halves of one thing: `mail_flag` sets the marker,
+`mail_search(flagged_only=true)` gets those messages back — filtered by the
+server, not by paging a folder.
 
 Guardrails: sending and moving are flagged `destructiveHint` and refuse to run
 without an explicit `confirm=true`, so Claude checks with you first. Flagging is

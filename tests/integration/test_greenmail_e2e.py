@@ -146,9 +146,17 @@ def test_flag_and_unflag_round_trip(provider):
     inbox, _ = p.search("INBOX", limit=50)
     assert "\\Flagged" in _find_by_subject(inbox, subject).flags
 
+    # And the server does the narrowing, which is the whole point of the
+    # filter -- "what have I flagged" must not mean paging the folder.
+    only, _ = p.search("INBOX", flagged_only=True, limit=50)
+    assert _find_by_subject(only, subject) is not None
+    assert all("\\Flagged" in m.flags for m in only)
+
     assert p.flag("INBOX", [target.uid], flagged=False) == 1
     inbox, _ = p.search("INBOX", limit=50)
     assert "\\Flagged" not in _find_by_subject(inbox, subject).flags
+    only, _ = p.search("INBOX", flagged_only=True, limit=50)
+    assert _find_by_subject(only, subject) is None
 
 
 def test_flag_does_not_expunge_deleted_messages(provider):

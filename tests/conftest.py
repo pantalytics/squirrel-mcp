@@ -54,10 +54,13 @@ class FakeMailProvider:
         query: Optional[str] = None,
         *,
         unseen_only: bool = False,
+        flagged_only: bool = False,
         since: Optional[str] = None,
         limit: int = 25,
         offset: int = 0,
     ) -> Tuple[List[MessageSummary], int]:
+        if flagged_only and "101" not in self.flagged:
+            return [], 0
         msg = MessageSummary(
             uid="101",
             folder=folder,

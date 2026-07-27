@@ -17,7 +17,9 @@ Mail tools (all prefixed `mail_`):
   the user which address a message will be sent from.
 - mail_list_folders: list mailboxes/folders. Start here to learn folder names.
 - mail_search: search one folder, newest first. Paginate with limit/offset; the
-  mailbox can be large, so never try to pull everything at once.
+  mailbox can be large, so never try to pull everything at once. `unseen_only`
+  and `flagged_only` narrow it server-side -- use `flagged_only=true` to answer
+  "what have I flagged", rather than paging the folder and sifting yourself.
 - mail_read: read one message by uid. Large bodies are truncated -- the response
   tells you the total length and how to page the rest.
 - mail_read_chunk: fetch the next slice of a large body (offset + length).

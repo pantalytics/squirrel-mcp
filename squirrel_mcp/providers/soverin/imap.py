@@ -152,11 +152,12 @@ class SoverinImapClient:
         query: Optional[str] = None,
         *,
         unseen_only: bool = False,
+        flagged_only: bool = False,
         since: Optional[str] = None,
         limit: int = 25,
         offset: int = 0,
     ) -> Tuple[List[MessageSummary], int]:
-        criteria = self._build_criteria(query, unseen_only, since)
+        criteria = self._build_criteria(query, unseen_only, flagged_only, since)
         charset = "UTF-8" if query else "US-ASCII"
 
         def op(mb: BaseMailBox) -> Tuple[List[MessageSummary], int]:
@@ -309,12 +310,19 @@ class SoverinImapClient:
             raise MailNotFoundError(f"Folder {folder!r} not found: {exc}") from exc
 
     @staticmethod
-    def _build_criteria(query: Optional[str], unseen_only: bool, since: Optional[str]):
+    def _build_criteria(
+        query: Optional[str], unseen_only: bool, flagged_only: bool, since: Optional[str]
+    ):
         kwargs: dict = {}
         if query:
             kwargs["text"] = query
         if unseen_only:
             kwargs["seen"] = False
+        if flagged_only:
+            # Only ever set when asked: ``flagged=False`` is not "no filter",
+            # it is UNFLAGGED -- the exact opposite of what an omitted argument
+            # should mean.
+            kwargs["flagged"] = True
         if since:
             try:
                 kwargs["date_gte"] = datetime.date.fromisoformat(since)

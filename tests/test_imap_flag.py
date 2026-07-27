@@ -91,6 +91,17 @@ def test_a_uid_that_could_inject_imap_is_refused(client):
     assert client._mailbox.client.uid_calls == []
 
 
+def test_flagged_only_narrows_the_search_criteria(client):
+    """The footgun this guards: imap-tools maps ``flagged=False`` to UNFLAGGED,
+    which is the opposite of "no filter" -- so the key must be absent, not
+    false, when the caller did not ask."""
+    build = SoverinImapClient._build_criteria
+    assert build(None, False, True, None) == "(FLAGGED)"
+    assert build(None, False, False, None) == "ALL"
+    assert "UNFLAGGED" not in str(build("invoice", True, False, "2026-07-01"))
+    assert build("invoice", True, True, None) == '(FLAGGED UNSEEN TEXT "invoice")'
+
+
 def test_a_rejected_store_becomes_a_provider_error(client, monkeypatch):
     monkeypatch.setattr(
         client._mailbox.client, "uid", lambda *a: ("NO", [b"permission denied"])
