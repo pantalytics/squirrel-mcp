@@ -22,7 +22,8 @@ from imap_tools import (
     MailBoxUnencrypted,
     MailMessageFlags,
 )
-from imap_tools.errors import MailboxLoginError
+from imap_tools.errors import MailboxFlagError, MailboxLoginError
+from imap_tools.utils import check_command_status, clean_uids
 
 from ...logging_config import get_logger
 from ..protocol import (
@@ -265,6 +266,37 @@ class SoverinImapClient:
             self._select(mb, folder)
             mb.move(uids, destination)
             return len(uids)
+
+        return self._run(op)
+
+    def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
+        # Deliberately a raw UID STORE rather than imap_tools' ``mb.flag``:
+        # that helper follows every STORE with an EXPUNGE, which permanently
+        # removes anything another client left marked \Deleted in this folder.
+        # Flagging is meant to be the one mail write you can undo, so it does
+        # not get to delete messages as a side effect.
+        try:
+            # Rejects anything that is not a bare uid, so a crafted argument
+            # cannot smuggle extra IMAP into the STORE command below.
+            cleaned = clean_uids(uids)
+        except TypeError as exc:
+            raise MailProviderError(f"Invalid message uid: {exc}") from exc
+        if not cleaned:
+            return 0
+
+        def op(mb: BaseMailBox) -> int:
+            self._select(mb, folder)
+            result = mb.client.uid(
+                "STORE",
+                ",".join(cleaned),
+                ("+" if flagged else "-") + "FLAGS",
+                f"({MailMessageFlags.FLAGGED})",
+            )
+            try:
+                check_command_status(result, MailboxFlagError)
+            except MailboxFlagError as exc:
+                raise MailProviderError(f"Could not update flags: {exc}") from exc
+            return len(cleaned)
 
         return self._run(op)
 

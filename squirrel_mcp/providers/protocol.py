@@ -205,6 +205,15 @@ class MailProvider(Protocol):
         """Move messages from ``folder`` to ``destination``. Returns count moved."""
         ...
 
+    def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
+        """Set or clear the ``\\Flagged`` marker on messages. Returns count changed.
+
+        The marker every mail client draws as a star/flag. Setting it on an
+        already-flagged message is a no-op, not an error -- the operation is
+        idempotent, and so is clearing it.
+        """
+        ...
+
 
 # --------------------------------------------------------------------------- #
 # Calendar pillar (CalDAV) -- value objects + protocol.

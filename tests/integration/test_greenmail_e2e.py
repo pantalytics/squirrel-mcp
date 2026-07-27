@@ -126,6 +126,66 @@ def test_move_between_folders(provider):
     assert _find_by_subject(archive, subject) is not None
 
 
+def test_flag_and_unflag_round_trip(provider):
+    """The one operation a fake cannot honestly check.
+
+    ``flag`` writes a raw ``UID STORE`` (see the comment in ``imap.py`` on why
+    it does not use imap-tools' own helper), so its command syntax is only ever
+    proved by a real IMAP server -- a mock would happily accept a malformed one.
+    """
+    p, cfg = provider
+    subject = f"E2E flag {uuid.uuid4().hex[:8]}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, "Flag me.")
+
+    inbox, _ = p.search("INBOX", limit=50)
+    target = _find_by_subject(inbox, subject)
+    assert target is not None
+    assert "\\Flagged" not in target.flags
+
+    assert p.flag("INBOX", [target.uid]) == 1
+    inbox, _ = p.search("INBOX", limit=50)
+    assert "\\Flagged" in _find_by_subject(inbox, subject).flags
+
+    assert p.flag("INBOX", [target.uid], flagged=False) == 1
+    inbox, _ = p.search("INBOX", limit=50)
+    assert "\\Flagged" not in _find_by_subject(inbox, subject).flags
+
+
+def test_flag_does_not_expunge_deleted_messages(provider):
+    """Flagging must not take other messages with it.
+
+    imap-tools' ``mb.flag`` follows every STORE with an EXPUNGE, which would
+    permanently drop whatever another client left marked \\Deleted in the same
+    folder. That is why ``flag`` issues the STORE itself; this pins the reason.
+    """
+    p, cfg = provider
+    keep = f"E2E keep {uuid.uuid4().hex[:8]}"
+    doomed = f"E2E doomed {uuid.uuid4().hex[:8]}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, keep, "Flag me.")
+    _seed_message(cfg.smtp_host, cfg.smtp_port, doomed, "Another client marked me deleted.")
+
+    inbox, _ = p.search("INBOX", limit=50)
+    keep_uid = _find_by_subject(inbox, keep).uid
+    doomed_uid = _find_by_subject(inbox, doomed).uid
+
+    # A second client marks one message \Deleted without expunging -- exactly
+    # what a desktop mail client in "mark as deleted" mode leaves behind.
+    mb = MailBoxUnencrypted(cfg.imap_host, port=cfg.imap_port).login(TEST_LOGIN, TEST_PASSWORD)
+    try:
+        mb.folder.set("INBOX")
+        # Raw STORE, not mb.flag -- the helper's own EXPUNGE would remove the
+        # message here and there would be nothing left to test.
+        mb.client.uid("STORE", doomed_uid, "+FLAGS", "(\\Deleted)")
+    finally:
+        mb.logout()  # LOGOUT, unlike CLOSE, leaves \Deleted messages in place
+
+    p.flag("INBOX", [keep_uid])
+
+    inbox, _ = p.search("INBOX", limit=50)
+    assert _find_by_subject(inbox, doomed) is not None, "flagging expunged a deleted message"
+    assert "\\Flagged" in _find_by_subject(inbox, keep).flags
+
+
 def test_send_delivers_to_self(provider):
     p, cfg = provider
     subject = f"E2E send {uuid.uuid4().hex[:8]}"

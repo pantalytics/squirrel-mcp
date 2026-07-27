@@ -34,7 +34,10 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
 3. **Don't reinvent the wheel** -- lean on mature libraries (`imap-tools` for
    IMAP, stdlib `smtplib`/`email` for SMTP) instead of hand-rolling protocol code.
 4. **Confirm before it leaves or changes** -- sending and moving/deleting require
-   an explicit `confirm=true` and are flagged `destructiveHint`.
+   an explicit `confirm=true` and are flagged `destructiveHint`. The line is
+   "could the user not get this back", not "is this a write": `mail_flag` sets
+   and clears the same marker with the same tool and alters no message, so
+   gating it would only teach clients that the confirm prompt is noise.
 5. **No fallbacks** -- explicit config or a clear error, never guess credentials.
 6. **Open core** -- public package works standalone (stdio, one mailbox from env);
    the private package adds SaaS features via well-defined seams.
@@ -47,6 +50,13 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   IMAP/SMTP backend) delegates to `imap-tools` (IMAP) and stdlib SMTP. This is the
   only file that knows about IMAP/SMTP.
 - `providers/factory.py` -- picks the provider from `SQUIRREL_MAIL_PROVIDER`.
+- `SoverinImapClient.flag` is the one deliberate exception to principle 3: it
+  issues its own `UID STORE` instead of calling `imap-tools`' `mb.flag`, because
+  that helper follows every STORE with an `EXPUNGE` -- which would permanently
+  drop whatever another mail client left marked `\Deleted` in the folder.
+  Flagging is advertised as non-destructive, so it does not get to delete
+  anything. `tests/test_imap_flag.py` pins the command shape and the absent
+  expunge; the GreenMail e2e proves both against a real server.
 - Blocking IMAP/SMTP calls run off the event loop via `tools/_common.run_blocking`
   (per-provider `asyncio.Lock` -> one socket is never used by two threads).
 - Single-tenant: one mailbox from env vars (stdio or HTTP). The hosted

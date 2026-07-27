@@ -118,6 +118,16 @@ class MoveResult(BaseModel):
     uids: List[str] = Field(default_factory=list)
 
 
+class FlagResult(BaseModel):
+    changed: int = Field(
+        description="Number of messages the flag change was applied to "
+        "(a uid no longer in the folder is skipped)"
+    )
+    flagged: bool = Field(description="True if the flag was set, false if it was cleared")
+    folder: str
+    uids: List[str] = Field(default_factory=list)
+
+
 # ===================== Calendar (CalDAV) =====================
 
 

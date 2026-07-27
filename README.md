@@ -24,6 +24,7 @@ is configured.
 - *"Read message 4213 in INBOX and summarise the thread."*
 - *"Draft a reply to Anna — I'll review before it goes out."*
 - *"File these three newsletters into the Archive folder."*
+- *"Flag everything from the tax office so I can deal with it tonight."*
 
 | Tool | What it does | Safe? |
 |------|--------------|-------|
@@ -35,9 +36,12 @@ is configured.
 | `mail_draft` / `mail_edit_draft` | Create / update a draft in Drafts | writes to Drafts |
 | `mail_send` | Send a message — **requires `confirm=true`** | ⚠️ outgoing |
 | `mail_move` | Move messages between folders — **requires `confirm=true`** | ⚠️ mutating |
+| `mail_flag` | Flag / unflag messages — the star, `flagged=false` clears it | reversible |
 
 Guardrails: sending and moving are flagged `destructiveHint` and refuse to run
-without an explicit `confirm=true`, so Claude checks with you first. Big mailboxes
+without an explicit `confirm=true`, so Claude checks with you first. Flagging is
+the deliberate exception — it alters no message and the same tool takes it back
+off — so it runs without one. Big mailboxes
 are handled with pagination (`mail_search`) and chunking (`mail_read_chunk`) —
 never an all-in-one dump.
 
