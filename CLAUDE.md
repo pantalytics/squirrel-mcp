@@ -57,6 +57,18 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   Flagging is advertised as non-destructive, so it does not get to delete
   anything. `tests/test_imap_flag.py` pins the command shape and the absent
   expunge; the GreenMail e2e proves both against a real server.
+- `providers/soverin/contacts.py` **discovers** the address-book home rather than
+  assuming a path. CardDAV standardises none, so `carddav_url` is a starting
+  point: RFC 6764's `current-user-principal` → `addressbook-home-set` hops turn a
+  bare host name (iCloud, GMX, Yandex), a discovery root (mailbox.org) and the
+  home collection itself (Fastmail) into the same books. It used to append
+  `/addressbooks/` to whatever it was given -- Soverin's layout, and nobody
+  else's -- which is what kept a *prefilled* CardDAV URL out of reach: only a
+  home collection spelled out per customer would have worked. That path survives
+  as the fallback for a server answering neither property, and
+  `tests/test_carddav_discovery.py` pins all of it, including that a 401 stays a
+  401 instead of being retried into "no address books found". The CalDAV side
+  needs none of this: the `caldav` library's `principal()` already does it.
 - Blocking IMAP/SMTP calls run off the event loop via `tools/_common.run_blocking`
   (per-provider `asyncio.Lock` -> one socket is never used by two threads).
 - Single-tenant: one mailbox from env vars (stdio or HTTP). The hosted
