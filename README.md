@@ -211,6 +211,15 @@ a provider that satisfies the same protocol — the tools don't change. Blocking
 network calls run off the event loop via `run_blocking`. See `CLAUDE.md` for the
 full map and the open-core seams the private admin package extends.
 
+## Licence
+
+Squirrel is **source-available**, not OSI open source: the full source lives here
+under the [Elastic License 2.0](LICENSE). In practice you may read, run, modify
+and redistribute it, including commercially and inside your own company. The one
+restriction that matters is that you may not offer Squirrel to third parties as a
+hosted or managed service — that is the part we sell at
+[squirrel.pantalytics.com](https://squirrel.pantalytics.com).
+
 ---
 
 © Pantalytics B.V. Licensed under the Elastic License 2.0.
