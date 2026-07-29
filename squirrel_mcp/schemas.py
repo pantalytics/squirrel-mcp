@@ -67,6 +67,10 @@ class MailBody(BaseModel):
     from_addr: str
     to_addrs: List[str] = Field(default_factory=list)
     cc_addrs: List[str] = Field(default_factory=list)
+    reply_to_addrs: List[str] = Field(
+        default_factory=list,
+        description="Reply-To, when the sender set one -- where a reply belongs",
+    )
     date: Optional[str] = None
     flags: List[str] = Field(default_factory=list)
     message_id: Optional[str] = None
@@ -100,6 +104,16 @@ class DraftResult(BaseModel):
     from_address: Optional[str] = Field(
         default=None, description="Address the draft will be sent from"
     )
+    subject: Optional[str] = Field(
+        default=None, description="Subject actually used (derived when replying)"
+    )
+    recipients: List[str] = Field(
+        default_factory=list, description="Addresses in To (derived when replying)"
+    )
+    in_reply_to: Optional[str] = Field(
+        default=None,
+        description="Message-ID this draft replies to; null for a new conversation",
+    )
 
 
 class SendResult(BaseModel):
@@ -108,6 +122,14 @@ class SendResult(BaseModel):
     recipients: List[str] = Field(default_factory=list)
     from_address: Optional[str] = Field(
         default=None, description="Address the message was sent from"
+    )
+    subject: Optional[str] = Field(
+        default=None, description="Subject actually used (derived when replying)"
+    )
+    in_reply_to: Optional[str] = Field(
+        default=None,
+        description="Message-ID this reply threads onto; null if sent as a new "
+        "conversation. Repeat it back so the user knows it landed in the thread.",
     )
 
 

@@ -96,6 +96,20 @@ class SoverinMailProvider:
     def fetch_attachment(self, folder: str, uid: str, index: int) -> AttachmentPayload:
         return self._imap.fetch_attachment(folder, uid, index)
 
+    # ---- threading -------------------------------------------------------- #
+    def _reply_headers(
+        self, reply_to_uid: Optional[str], reply_to_folder: str
+    ) -> Tuple[Optional[str], Optional[List[str]]]:
+        """Resolve a uid the caller is replying to into threading headers.
+
+        This is the one place the two halves of this provider have to meet: the
+        headers that make a reply thread live on the IMAP side, and the message
+        that needs them goes out over SMTP.
+        """
+        if not reply_to_uid:
+            return None, None
+        return self._imap.reply_headers(reply_to_folder, reply_to_uid)
+
     # ---- draft / move / flag (IMAP) -------------------------------------- #
     def save_draft(
         self,
@@ -106,8 +120,20 @@ class SoverinMailProvider:
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
         folder: str = "Drafts",
+        reply_to_uid: Optional[str] = None,
+        reply_to_folder: str = "INBOX",
     ) -> str:
-        return self._imap.save_draft(to, subject, body, cc=cc, bcc=bcc, folder=folder)
+        in_reply_to, references = self._reply_headers(reply_to_uid, reply_to_folder)
+        return self._imap.save_draft(
+            to,
+            subject,
+            body,
+            cc=cc,
+            bcc=bcc,
+            folder=folder,
+            in_reply_to=in_reply_to,
+            references=references,
+        )
 
     def update_draft(
         self,
@@ -137,5 +163,16 @@ class SoverinMailProvider:
         *,
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
+        reply_to_uid: Optional[str] = None,
+        reply_to_folder: str = "INBOX",
     ) -> dict:
-        return self._smtp.send(to, subject, body, cc=cc, bcc=bcc)
+        in_reply_to, references = self._reply_headers(reply_to_uid, reply_to_folder)
+        return self._smtp.send(
+            to,
+            subject,
+            body,
+            cc=cc,
+            bcc=bcc,
+            in_reply_to=in_reply_to,
+            references=references,
+        )

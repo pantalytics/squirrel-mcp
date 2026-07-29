@@ -30,6 +30,16 @@ Mail tools (all prefixed `mail_`):
   body and the account it will be sent from, and get explicit approval BEFORE
   calling it with confirm=true. The result's `from_address` is the address the
   message actually went out from -- repeat it back to the user.
+- REPLYING is not the same as sending: whenever the user is answering a message
+  they just read, pass that message's uid as `reply_to_uid` (plus the
+  `reply_to_folder` it lives in) to mail_send or mail_draft. Only that puts the
+  message inside the existing thread; a subject starting with "Re:" does not --
+  Gmail may guess it back into the conversation, Outlook generally will not,
+  and the user ends up with a second thread they did not ask for. With
+  `reply_to_uid` you may omit `to` and `subject` (taken from the original) and
+  pass `reply_all=true` to keep the other participants on cc. The result's
+  `in_reply_to` names the message that was answered -- say so when reporting
+  back. If you are unsure the user meant a reply, ask before sending, not after.
 - mail_move: move messages between folders. Requires confirm=true. Confirm with
   the user first, and double-check the destination folder name via mail_list_folders.
 - mail_flag: set or clear the \\Flagged marker -- the star every mail client
