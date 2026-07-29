@@ -42,6 +42,16 @@ Flagging and finding are two halves of one thing: `mail_flag` sets the marker,
 `mail_search(flagged_only=true)` gets those messages back — filtered by the
 server, not by paging a folder.
 
+**Replies land in the thread.** `mail_send` and `mail_draft` take a
+`reply_to_uid` (the message being answered, plus the `reply_to_folder` it lives
+in), and the reply goes out carrying the `In-Reply-To` and `References` headers
+every mail client uses to build a conversation. A subject beginning with "Re:"
+is not the same thing — Gmail will often guess it back into the thread, Outlook
+generally will not, and you end up with a second conversation. With
+`reply_to_uid` the recipient and subject may be left out entirely (taken from
+the original, `Reply-To` respected), and `reply_all=true` keeps the other
+participants on cc.
+
 Guardrails: sending and moving are flagged `destructiveHint` and refuse to run
 without an explicit `confirm=true`, so Claude checks with you first. Flagging is
 the deliberate exception — it alters no message and the same tool takes it back

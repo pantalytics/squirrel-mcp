@@ -36,7 +36,7 @@ from ..protocol import (
     MessageDetail,
     MessageSummary,
 )
-from .mime import build_email
+from .mime import build_email, parse_references, reply_chain
 
 logger = get_logger(__name__)
 
@@ -210,6 +210,42 @@ class SoverinImapClient:
 
         return self._run(op)
 
+    # ---- threading -------------------------------------------------------- #
+    def reply_headers(self, folder: str, uid: str) -> Tuple[Optional[str], List[str]]:
+        """The ``In-Reply-To`` and ``References`` a reply to that message needs.
+
+        Fetched headers-only: a reply needs four header lines, not a mailbox's
+        worth of body. Returns ``(in_reply_to, references)``; a message the
+        server hands back without a Message-ID (rare, but legal) yields
+        ``(None, [])`` and the reply simply goes out unthreaded rather than
+        failing -- one message not joining a thread beats a send that errors.
+        """
+
+        def op(mb: BaseMailBox) -> Tuple[Optional[str], List[str]]:
+            self._select(mb, folder)
+            msgs = list(
+                mb.fetch(uid_list=[uid], mark_seen=False, limit=1, headers_only=True)
+            )
+            if not msgs:
+                raise MailNotFoundError(f"Message uid {uid} not found in {folder}")
+            headers = msgs[0].headers
+            parent_id = (headers.get("message-id") or (None,))[0]
+            parent_id = parent_id.strip() if parent_id else None
+            parent_refs = parse_references((headers.get("references") or ("",))[0])
+            if not parent_refs:
+                # A message that is itself the first reply in a thread often
+                # carries only In-Reply-To, so the chain starts there.
+                parent_refs = parse_references((headers.get("in-reply-to") or ("",))[0])
+            if not parent_id:
+                logger.warning(
+                    "Message uid %s in %s has no Message-ID; replying unthreaded",
+                    uid,
+                    folder,
+                )
+            return parent_id, reply_chain(parent_id, parent_refs)
+
+        return self._run(op)
+
     # ---- write operations ------------------------------------------------ #
     def save_draft(
         self,
@@ -220,9 +256,20 @@ class SoverinImapClient:
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
         folder: Optional[str] = None,
+        in_reply_to: Optional[str] = None,
+        references: Optional[List[str]] = None,
     ) -> str:
         target = folder or self._drafts_folder
-        msg = build_email(self._email, to, subject, body, cc=cc, bcc=bcc)
+        msg = build_email(
+            self._email,
+            to,
+            subject,
+            body,
+            cc=cc,
+            bcc=bcc,
+            in_reply_to=in_reply_to,
+            references=references,
+        )
         message_id = msg["Message-ID"]
 
         def op(mb: BaseMailBox) -> str:
@@ -251,7 +298,23 @@ class SoverinImapClient:
             existing = list(mb.fetch(uid_list=[uid], mark_seen=False, limit=1))
             if not existing:
                 raise MailNotFoundError(f"Draft uid {uid} not found in {target}")
-            msg = build_email(self._email, to, subject, body, cc=cc, bcc=bcc)
+            # Editing a draft rewrites the message, so anything not carried
+            # over is lost -- and the threading headers are exactly what a
+            # reply drafted a minute ago would silently lose, turning a
+            # reviewed reply into a new message at the moment it is sent.
+            old_headers = existing[0].headers
+            old_in_reply_to = (old_headers.get("in-reply-to") or ("",))[0].strip() or None
+            old_references = parse_references((old_headers.get("references") or ("",))[0])
+            msg = build_email(
+                self._email,
+                to,
+                subject,
+                body,
+                cc=cc,
+                bcc=bcc,
+                in_reply_to=old_in_reply_to,
+                references=old_references,
+            )
             message_id = msg["Message-ID"]
             mb.append(msg.as_bytes(), target, flag_set=[MailMessageFlags.DRAFT])
             # Remove the old revision.
@@ -373,6 +436,7 @@ class SoverinImapClient:
             from_addr=cls._from_display(msg),
             to_addrs=list(msg.to),
             cc_addrs=list(msg.cc),
+            reply_to_addrs=list(msg.reply_to),
             date=msg.date_str or None,
             flags=list(msg.flags),
             message_id=(msg.headers.get("message-id", (None,)) or (None,))[0],

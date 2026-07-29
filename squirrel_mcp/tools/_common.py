@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
-from typing import Any, Callable, TypeVar
+import email.utils
+import re
+from typing import Any, Callable, Iterable, TypeVar
 from weakref import WeakKeyDictionary
 
 from ..error_handling import (
@@ -75,6 +77,45 @@ def as_str_list(value: Any) -> list[str]:
     else:
         parts = [str(value)]
     return [p.strip() for p in parts if p and p.strip()]
+
+
+# "Re:" in the languages a mail client is likely to have written it in. Only
+# the ASCII "re" is universal; the rest exist so a reply to a reply does not
+# grow "Re: Antwort: Re: ..." one hop at a time.
+_RE_PREFIX = re.compile(r"^\s*(re|aw|antw|antwort|sv|vs|ref|res|odp|回复)\s*(\[\d+\])?\s*:\s*", re.I)
+
+
+def reply_subject(subject: str) -> str:
+    """The subject a reply to ``subject`` should carry.
+
+    Prefixes "Re: " unless there already is one -- a thread must not collect a
+    prefix per hop, and a mail client that threads on the subject (Outlook does,
+    as a fallback) treats "Re: Re: x" as a different conversation from "Re: x".
+    """
+    stripped = (subject or "").strip()
+    if not stripped:
+        return "Re:"
+    if _RE_PREFIX.match(stripped):
+        return stripped
+    return f"Re: {stripped}"
+
+
+def bare_addresses(values: Iterable[str]) -> list[str]:
+    """Header values like ``Anna <anna@x.eu>`` -> ``anna@x.eu``, de-duplicated.
+
+    A display name is fine in a To header and fatal in an SMTP envelope, so
+    anything derived from a message we read gets unwrapped before it is used as
+    a recipient. Comparison for de-duplication is case-insensitive, since
+    address casing is not meaningful to anyone but the local part's own server.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for _name, addr in email.utils.getaddresses([v for v in values if v]):
+        addr = addr.strip()
+        if addr and addr.lower() not in seen:
+            seen.add(addr.lower())
+            out.append(addr)
+    return out
 
 
 def require_confirm(confirm: bool, action: str) -> None:

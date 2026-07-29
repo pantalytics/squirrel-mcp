@@ -33,11 +33,22 @@ def _ensure_folders(host: str, imap_port: int, *names: str) -> None:
         mb.logout()
 
 
-def _seed_message(host: str, smtp_port: int, subject: str, body: str, attachment: bool = False):
+def _seed_message(
+    host: str,
+    smtp_port: int,
+    subject: str,
+    body: str,
+    attachment: bool = False,
+    message_id: str | None = None,
+):
     msg = EmailMessage()
     msg["From"] = "sender@external.test"
     msg["To"] = TEST_EMAIL
     msg["Subject"] = subject
+    # smtplib adds no Message-ID and GreenMail is not obliged to either, so a
+    # test that needs to reply to this message spells one out.
+    if message_id:
+        msg["Message-ID"] = message_id
     msg.set_content(body)
     if attachment:
         msg.add_attachment(
@@ -203,3 +214,74 @@ def test_send_delivers_to_self(provider):
 
     inbox, _ = p.search("INBOX", limit=50)
     assert _find_by_subject(inbox, subject) is not None
+
+
+def test_reply_lands_in_the_thread(provider):
+    """The whole point, against a real server: send a reply to a message that
+    is actually in the mailbox, then read the delivered copy back and check the
+    threading headers a mail client reads to build a conversation.
+
+    A fake provider can only prove we asked for threading; only a round trip
+    proves the headers survived the append, the SMTP submission and the
+    delivery."""
+    p, cfg = provider
+    subject = f"E2E thread {uuid.uuid4().hex[:8]}"
+    parent_id = f"<{uuid.uuid4().hex}@external.test>"
+    _seed_message(
+        cfg.smtp_host, cfg.smtp_port, subject, "Original message.", message_id=parent_id
+    )
+
+    inbox, _ = p.search("INBOX", limit=50)
+    original = _find_by_subject(inbox, subject)
+    assert original is not None
+    assert p.fetch_message("INBOX", original.uid).message_id == parent_id
+
+    reply_subject = f"Re: {subject}"
+    p.send([TEST_EMAIL], reply_subject, "Answering.", reply_to_uid=original.uid)
+
+    # Read the delivered reply's raw headers -- what the recipient's client sees.
+    mb = MailBoxUnencrypted(cfg.imap_host, port=cfg.imap_port).login(TEST_LOGIN, TEST_PASSWORD)
+    try:
+        delivered = [
+            m for m in mb.fetch(mark_seen=False) if (m.subject or "") == reply_subject
+        ]
+        assert delivered, "reply was not delivered"
+        headers = delivered[-1].headers
+        assert (headers.get("in-reply-to") or ("",))[0].strip() == parent_id
+        assert parent_id in (headers.get("references") or ("",))[0]
+    finally:
+        mb.logout()
+
+
+def test_a_reply_draft_keeps_its_thread_through_an_edit(provider):
+    """Drafting a reply and then fixing a typo in it is the ordinary path, and
+    the edit rewrites the message -- so this is where the threading would be
+    lost without anyone noticing until the send."""
+    p, cfg = provider
+    subject = f"E2E draft thread {uuid.uuid4().hex[:8]}"
+    parent_id = f"<{uuid.uuid4().hex}@external.test>"
+    _seed_message(
+        cfg.smtp_host, cfg.smtp_port, subject, "Original message.", message_id=parent_id
+    )
+
+    inbox, _ = p.search("INBOX", limit=50)
+    original = _find_by_subject(inbox, subject)
+    assert original is not None
+
+    draft_subject = f"Re: {subject}"
+    uid = p.save_draft(
+        [TEST_EMAIL], draft_subject, "First take", folder="Drafts",
+        reply_to_uid=original.uid, reply_to_folder="INBOX",
+    )
+    assert uid
+    new_uid = p.update_draft("Drafts", uid, [TEST_EMAIL], draft_subject, "Second take")
+
+    mb = MailBoxUnencrypted(cfg.imap_host, port=cfg.imap_port).login(TEST_LOGIN, TEST_PASSWORD)
+    try:
+        mb.folder.set("Drafts")
+        edited = list(mb.fetch(uid_list=[new_uid], mark_seen=False, limit=1))
+        assert edited, "edited draft not found"
+        assert (edited[0].headers.get("in-reply-to") or ("",))[0].strip() == parent_id
+        assert "Second take" in (edited[0].text or "")
+    finally:
+        mb.logout()

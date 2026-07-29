@@ -61,9 +61,25 @@ class SoverinSmtpClient:
         *,
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
+        in_reply_to: Optional[str] = None,
+        references: Optional[List[str]] = None,
     ) -> dict:
-        """Send a message and return {'message_id', 'recipients'}."""
-        msg = build_email(self._email, to, subject, body, cc=cc, bcc=bcc)
+        """Send a message and return {'message_id', 'recipients'}.
+
+        ``in_reply_to``/``references`` come from the message being replied to
+        (the provider reads them over IMAP) and are what put the reply in the
+        thread rather than beside it.
+        """
+        msg = build_email(
+            self._email,
+            to,
+            subject,
+            body,
+            cc=cc,
+            bcc=bcc,
+            in_reply_to=in_reply_to,
+            references=references,
+        )
         recipients = all_recipients(to, cc, bcc)
         if not recipients:
             raise MailProviderError("No recipients: 'to' is required")

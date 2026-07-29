@@ -48,6 +48,7 @@ class ReadToolsMixin:
                 from_addr=detail.from_addr,
                 to_addrs=detail.to_addrs,
                 cc_addrs=detail.cc_addrs,
+                reply_to_addrs=list(getattr(detail, "reply_to_addrs", None) or []),
                 date=detail.date,
                 flags=detail.flags,
                 message_id=detail.message_id,

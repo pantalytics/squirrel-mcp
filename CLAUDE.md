@@ -57,6 +57,24 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   Flagging is advertised as non-destructive, so it does not get to delete
   anything. `tests/test_imap_flag.py` pins the command shape and the absent
   expunge; the GreenMail e2e proves both against a real server.
+- **Replying is a provider concern, not a header the tool layer writes.**
+  `mail_send` / `mail_draft` take a `reply_to_uid` (+ `reply_to_folder`) and
+  hand it to the provider untouched, because *how* you join a thread is the
+  transport's business: IMAP/SMTP reads the parent's `Message-ID` /
+  `References` and sends the matching headers (`imap.reply_headers` →
+  `mime.build_email`, joined in `provider.py`, which is the only thing that
+  sees both halves), while an API backend may have a conversation of its own to
+  join -- the admin package's Graph provider uses `createReply` so Outlook's
+  `conversationId` is Outlook's to assign. What the *tool* layer derives is
+  only what a human would see: the recipient (`Reply-To`, else `From`), the
+  `Re:` subject, and reply-all's cc list. Two things that look incidental and
+  are not: `update_draft` carries the threading of the draft it replaces (an
+  edit rewrites the message, so a reviewed reply would otherwise turn back into
+  a new conversation at the moment it is sent), and `mime.reply_chain` trims a
+  long `References` to `MAX_REFERENCES` keeping the thread root plus the
+  nearest ancestors. `tests/test_reply_threading.py` and
+  `tests/test_imap_threading.py` pin the seams; the GreenMail e2e reads the
+  delivered headers back off a real server.
 - `providers/soverin/contacts.py` **discovers** the address-book home rather than
   assuming a path. CardDAV standardises none, so `carddav_url` is a starting
   point: RFC 6764's `current-user-principal` → `addressbook-home-set` hops turn a

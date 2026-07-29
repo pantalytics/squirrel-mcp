@@ -94,6 +94,10 @@ class MessageDetail:
     body_text: str
     body_length: int
     attachments: List[AttachmentInfo]
+    # Where the sender asked replies to go, when they said so at all. Optional
+    # with a default so a backend written before replying existed still
+    # constructs; a reply falls back to ``from_addr`` when it is empty.
+    reply_to_addrs: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -174,8 +178,13 @@ class MailProvider(Protocol):
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
         folder: str = "Drafts",
+        reply_to_uid: Optional[str] = None,
+        reply_to_folder: str = "INBOX",
     ) -> str:
-        """Append a new draft to the Drafts folder. Returns its uid."""
+        """Append a new draft to the Drafts folder. Returns its uid.
+
+        ``reply_to_uid`` threads the draft onto that message -- see ``send``.
+        """
         ...
 
     def update_draft(
@@ -189,7 +198,14 @@ class MailProvider(Protocol):
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
     ) -> str:
-        """Replace an existing draft. Returns the new uid."""
+        """Replace an existing draft. Returns the new uid.
+
+        A draft that was created as a reply stays one: the implementation
+        carries its threading over. There is deliberately no ``reply_to_uid``
+        here -- a draft can only be threaded when it is created (Graph mints
+        the conversation then), so turning an ordinary draft into a reply means
+        saving a new one.
+        """
         ...
 
     def send(
@@ -200,8 +216,18 @@ class MailProvider(Protocol):
         *,
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
+        reply_to_uid: Optional[str] = None,
+        reply_to_folder: str = "INBOX",
     ) -> dict:
-        """Send a message. Returns {'message_id': ..., 'recipients': [...]}."""
+        """Send a message. Returns {'message_id': ..., 'recipients': [...]}.
+
+        ``reply_to_uid`` (a uid in ``reply_to_folder``) makes this a reply
+        *inside* that message's thread. How is the backend's business: an
+        IMAP/SMTP backend reads the parent's Message-ID and References and
+        sends the matching headers; an API backend may have a conversation of
+        its own to join. Recipients and subject are not derived here -- the
+        caller passes what it means to send.
+        """
         ...
 
     def move(self, folder: str, uids: List[str], destination: str) -> int:

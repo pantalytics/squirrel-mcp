@@ -23,6 +23,12 @@ class FakeMailProvider:
         self.sent: list = []
         self.moved: list = []
         self.drafts: list = []
+        # Every send/save_draft's keyword arguments, so a test can assert what
+        # the tool layer handed the backend (threading in particular).
+        self.send_kwargs: list = []
+        self.draft_kwargs: list = []
+        # Set to mimic a sender who asked for replies somewhere else.
+        self.reply_to_addrs: list = []
         # Uids currently carrying \Flagged, so search/fetch report what flag()
         # did and a set-then-clear round trip is actually observable.
         self.flagged: set = set()
@@ -81,8 +87,9 @@ class FakeMailProvider:
             folder=folder,
             subject="Hello",
             from_addr="Anna <anna@example.com>",
-            to_addrs=["me@example.com"],
-            cc_addrs=[],
+            to_addrs=["me@example.com", "Bob <bob@example.com>"],
+            cc_addrs=["carol@example.com"],
+            reply_to_addrs=list(self.reply_to_addrs),
             date="Mon, 01 Jan 2026 10:00:00 +0000",
             flags=["\\Seen"] + (["\\Flagged"] if uid in self.flagged else []),
             message_id="<abc@example.com>",
@@ -98,16 +105,48 @@ class FakeMailProvider:
             filename="doc.pdf", content_type="application/pdf", size=5, content=b"%PDF-"
         )
 
-    def save_draft(self, to, subject, body, *, cc=None, bcc=None, folder="Drafts") -> str:
+    def save_draft(
+        self,
+        to,
+        subject,
+        body,
+        *,
+        cc=None,
+        bcc=None,
+        folder="Drafts",
+        reply_to_uid=None,
+        reply_to_folder="INBOX",
+    ) -> str:
         self.drafts.append((to, subject, body, folder))
+        self.draft_kwargs.append(
+            {"cc": cc, "bcc": bcc, "reply_to_uid": reply_to_uid,
+             "reply_to_folder": reply_to_folder}
+        )
         return "900"
 
     def update_draft(self, folder, uid, to, subject, body, *, cc=None, bcc=None) -> str:
         return "901"
 
-    def send(self, to, subject, body, *, cc=None, bcc=None) -> dict:
+    def send(
+        self,
+        to,
+        subject,
+        body,
+        *,
+        cc=None,
+        bcc=None,
+        reply_to_uid=None,
+        reply_to_folder="INBOX",
+    ) -> dict:
         self.sent.append((to, subject, body))
-        return {"message_id": "<sent@example.com>", "recipients": list(to)}
+        self.send_kwargs.append(
+            {"cc": cc, "bcc": bcc, "reply_to_uid": reply_to_uid,
+             "reply_to_folder": reply_to_folder}
+        )
+        return {
+            "message_id": "<sent@example.com>",
+            "recipients": list(to) + list(cc or []),
+        }
 
     def move(self, folder, uids, destination) -> int:
         self.moved.append((folder, uids, destination))
