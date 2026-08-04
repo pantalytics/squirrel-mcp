@@ -1,7 +1,11 @@
 # 🐿️ Squirrel
 
-# **Update** if you just want to get up and running in seconds, consider using the hosted version:
-[Squirrel Pro](https://www.pantalytics.com/apps/squirrel)
+--- 
+
+### **Update** if you just want to get up and running in seconds, consider using the hosted version:
+### [Squirrel Pro](https://www.pantalytics.com/apps/squirrel)
+
+---
 
 **Own your data.** Squirrel is a local, sovereign personal-information hub that
 exposes *your* mailbox to Claude and other MCP clients — running entirely on your
