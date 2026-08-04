@@ -1,5 +1,8 @@
 # 🐿️ Squirrel
 
+**Update** if you just want to get up and running in seconds, consider using the hosted version:
+[Squirrel Pro](https://www.pantalytics.com/apps/squirrel)
+
 **Own your data.** Squirrel is a local, sovereign personal-information hub that
 exposes *your* mailbox to Claude and other MCP clients — running entirely on your
 machine, talking straight to your mail provider over TLS. No mail content ever
@@ -12,9 +15,6 @@ Gmail/Outlook can plug in later without a rewrite. Point it at any mailbox by
 filling in your provider's host names; there are no built-in presets. A tool
 family (`mail_*`, `contacts_*`, `calendar_*`) is present only when that pillar
 is configured.
-
-> Little brother of [`odoo-mcp-pro`](https://github.com/pantalytics/odoo-mcp-pro):
-> same stack, same patterns, same open-core split.
 
 ---
 
