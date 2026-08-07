@@ -13,7 +13,7 @@ from email.message import EmailMessage
 import pytest
 from imap_tools import MailBoxUnencrypted
 
-from squirrel_mcp.providers import create_mail_provider
+from squirrel_mcp.providers import OutgoingAttachment, create_mail_provider
 
 pytestmark = pytest.mark.integration
 
@@ -285,3 +285,113 @@ def test_a_reply_draft_keeps_its_thread_through_an_edit(provider):
         assert "Second take" in (edited[0].text or "")
     finally:
         mb.logout()
+
+
+def test_send_with_an_attachment_arrives_intact(provider):
+    """The claim that matters: a real SMTP server accepts the message and a
+    real IMAP server hands the same bytes back. Everything below this -- the
+    multipart, the base64, the filename encoding -- is only worth anything if
+    it survives an actual round trip."""
+    p, cfg = provider
+    subject = f"E2E attach send {uuid.uuid4().hex[:8]}"
+    payload = b"%PDF-1.4 " + uuid.uuid4().hex.encode() * 8
+
+    p.send(
+        [TEST_EMAIL],
+        subject,
+        "See attached.",
+        attachments=[
+            OutgoingAttachment(
+                filename="jaarrekening.pdf", content_type="application/pdf", content=payload
+            )
+        ],
+    )
+
+    inbox, _ = p.search("INBOX", limit=50)
+    delivered = _find_by_subject(inbox, subject)
+    assert delivered is not None, "message with attachment was not delivered"
+    assert delivered.has_attachments
+
+    detail = p.fetch_message("INBOX", delivered.uid)
+    (att,) = detail.attachments
+    assert att.filename == "jaarrekening.pdf"
+    assert att.content_type == "application/pdf"
+    assert p.fetch_attachment("INBOX", delivered.uid, 0).content == payload
+    # The covering note is still readable text, not swallowed by the multipart.
+    assert "See attached." in detail.body_text
+
+
+def test_several_attachments_all_survive(provider):
+    p, cfg = provider
+    subject = f"E2E attach many {uuid.uuid4().hex[:8]}"
+    files = [
+        OutgoingAttachment("one.txt", "text/plain", b"first"),
+        OutgoingAttachment("two.csv", "text/csv", b"a,b\n1,2\n"),
+        OutgoingAttachment("three.bin", "application/octet-stream", bytes(range(256))),
+    ]
+    p.send([TEST_EMAIL], subject, "Three files.", attachments=files)
+
+    inbox, _ = p.search("INBOX", limit=50)
+    delivered = _find_by_subject(inbox, subject)
+    assert delivered is not None
+
+    detail = p.fetch_message("INBOX", delivered.uid)
+    by_name = {a.filename: a for a in detail.attachments}
+    assert set(by_name) == {"one.txt", "two.csv", "three.bin"}
+    got = {
+        a.filename: p.fetch_attachment("INBOX", delivered.uid, a.index).content
+        for a in detail.attachments
+    }
+    assert got["three.bin"] == bytes(range(256)), "binary payload was mangled in transit"
+    assert got["two.csv"] == b"a,b\n1,2\n"
+
+
+def test_forwarding_re_attaches_without_touching_the_bytes(provider):
+    """The cheap path end to end: read a file off one message and hang it on
+    another, which is what `source_uid` does in the tool layer."""
+    p, cfg = provider
+    seeded = f"E2E attach source {uuid.uuid4().hex[:8]}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, seeded, "Here it is.", attachment=True)
+
+    inbox, _ = p.search("INBOX", limit=50)
+    original = _find_by_subject(inbox, seeded)
+    assert original is not None
+    payload = p.fetch_attachment("INBOX", original.uid, 0)
+
+    forwarded = f"E2E attach forward {uuid.uuid4().hex[:8]}"
+    p.send(
+        [TEST_EMAIL],
+        forwarded,
+        "Passing this on.",
+        attachments=[
+            OutgoingAttachment(payload.filename, payload.content_type, payload.content)
+        ],
+    )
+
+    inbox, _ = p.search("INBOX", limit=50)
+    delivered = _find_by_subject(inbox, forwarded)
+    assert delivered is not None
+    detail = p.fetch_message("INBOX", delivered.uid)
+    assert detail.attachments[0].filename == "report.pdf"
+    assert p.fetch_attachment("INBOX", delivered.uid, 0).content == payload.content
+
+
+def test_a_draft_keeps_its_attachment_through_an_edit(provider):
+    """Against a real server this time: the edit re-appends the message, so
+    the file has to be read back off the old revision and written again."""
+    p, cfg = provider
+    subject = f"E2E draft attach {uuid.uuid4().hex[:8]}"
+    payload = b"contract bytes " + uuid.uuid4().hex.encode()
+
+    uid = p.save_draft(
+        [TEST_EMAIL], subject, "First take", folder="Drafts",
+        attachments=[OutgoingAttachment("contract.pdf", "application/pdf", payload)],
+    )
+    assert uid
+    new_uid = p.update_draft("Drafts", uid, [TEST_EMAIL], subject, "Second take")
+
+    detail = p.fetch_message("Drafts", new_uid)
+    assert "Second take" in detail.body_text
+    (att,) = detail.attachments
+    assert att.filename == "contract.pdf"
+    assert p.fetch_attachment("Drafts", new_uid, 0).content == payload

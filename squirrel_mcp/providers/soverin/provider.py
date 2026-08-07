@@ -16,6 +16,7 @@ from ..protocol import (
     FolderInfo,
     MessageDetail,
     MessageSummary,
+    OutgoingAttachment,
 )
 from .imap import SoverinImapClient
 from .smtp import SoverinSmtpClient
@@ -51,6 +52,11 @@ class SoverinMailProvider:
     @property
     def email(self) -> str:
         return self._email
+
+    @property
+    def supports_outgoing_attachments(self) -> bool:
+        """MIME can carry anything, so this backend always can."""
+        return True
 
     @property
     def is_authenticated(self) -> bool:
@@ -122,6 +128,7 @@ class SoverinMailProvider:
         folder: str = "Drafts",
         reply_to_uid: Optional[str] = None,
         reply_to_folder: str = "INBOX",
+        attachments: Optional[List[OutgoingAttachment]] = None,
     ) -> str:
         in_reply_to, references = self._reply_headers(reply_to_uid, reply_to_folder)
         return self._imap.save_draft(
@@ -133,6 +140,7 @@ class SoverinMailProvider:
             folder=folder,
             in_reply_to=in_reply_to,
             references=references,
+            attachments=attachments,
         )
 
     def update_draft(
@@ -145,8 +153,11 @@ class SoverinMailProvider:
         *,
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
+        attachments: Optional[List[OutgoingAttachment]] = None,
     ) -> str:
-        return self._imap.update_draft(folder, uid, to, subject, body, cc=cc, bcc=bcc)
+        return self._imap.update_draft(
+            folder, uid, to, subject, body, cc=cc, bcc=bcc, attachments=attachments
+        )
 
     def move(self, folder: str, uids: List[str], destination: str) -> int:
         return self._imap.move(folder, uids, destination)
@@ -165,6 +176,7 @@ class SoverinMailProvider:
         bcc: Optional[List[str]] = None,
         reply_to_uid: Optional[str] = None,
         reply_to_folder: str = "INBOX",
+        attachments: Optional[List[OutgoingAttachment]] = None,
     ) -> dict:
         in_reply_to, references = self._reply_headers(reply_to_uid, reply_to_folder)
         return self._smtp.send(
@@ -175,4 +187,5 @@ class SoverinMailProvider:
             bcc=bcc,
             in_reply_to=in_reply_to,
             references=references,
+            attachments=attachments,
         )

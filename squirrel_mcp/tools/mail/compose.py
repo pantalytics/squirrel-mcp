@@ -22,6 +22,7 @@ from mcp.types import ToolAnnotations
 from ...error_handling import ValidationError
 from ...schemas import DraftResult, SendResult
 from .._common import as_str_list, bare_addresses, reply_subject, require_confirm, run_blocking
+from .attachments import resolve_attachments
 
 
 async def _resolve_reply(
@@ -83,6 +84,7 @@ class ComposeToolsMixin:
             reply_to_uid: Optional[str] = None,
             reply_to_folder: str = "INBOX",
             reply_all: bool = False,
+            attachments: Optional[Any] = None,
             account: Optional[str] = None,
         ) -> DraftResult:
             """Save a new draft to the Drafts folder (nothing is sent).
@@ -97,10 +99,20 @@ class ComposeToolsMixin:
             draft then threads onto that message, and ``to`` and ``subject`` may
             be omitted -- they are taken from the original. ``reply_all=true``
             also cc's the other participants.
+
+            ATTACHMENTS: a list of objects, each either
+            {"source_uid": "412", "source_index": 0, "source_folder": "INBOX"}
+            to re-send a file already in the mailbox (indexes come from
+            mail_read) or {"filename": "x.pdf", "content_base64": "..."} for
+            bytes you supply. ALWAYS prefer the first form when forwarding
+            something the user received -- it copies nothing through you.
             """
             provider, sub = await self._get_provider(account, writes=True)
             if body is None:
                 raise ValidationError("'body' is required")
+            files = await resolve_attachments(
+                provider, attachments, default_folder=reply_to_folder
+            )
             recipients = as_str_list(to)
             cc_list = as_str_list(cc)
             in_reply_to = None
@@ -129,6 +141,7 @@ class ComposeToolsMixin:
                 folder=folder,
                 reply_to_uid=reply_to_uid,
                 reply_to_folder=reply_to_folder,
+                attachments=files,
             )
             self._track_usage(sub, "mail_draft")
             return DraftResult(
@@ -139,6 +152,7 @@ class ComposeToolsMixin:
                 subject=subject,
                 recipients=recipients,
                 in_reply_to=in_reply_to,
+                attachments=[a.filename for a in files],
             )
 
         @self.app.tool(
@@ -158,6 +172,7 @@ class ComposeToolsMixin:
             cc: Optional[Any] = None,
             bcc: Optional[Any] = None,
             folder: str = "Drafts",
+            attachments: Optional[Any] = None,
             account: Optional[str] = None,
         ) -> DraftResult:
             """Replace an existing draft with new content. Returns the new uid.
@@ -166,11 +181,22 @@ class ComposeToolsMixin:
             Pass the same ``account`` the draft was created in. A draft created
             as a reply stays in its thread; to turn an ordinary draft into a
             reply, save a new one with mail_draft's ``reply_to_uid``.
+
+            ATTACHMENTS: omit the argument and whatever the draft already
+            carries is kept -- fixing a typo does not drop the file. Pass a list
+            (same shape as mail_draft) to replace them, or [] to strip them.
             """
             provider, sub = await self._get_provider(account, writes=True)
             recipients = as_str_list(to)
             if not recipients:
                 raise ValidationError("'to' is required (at least one recipient)")
+            # None and [] mean different things here, so the resolve is
+            # conditional: omitted keeps the draft's own files, [] clears them.
+            files = (
+                None
+                if attachments is None
+                else await resolve_attachments(provider, attachments, default_folder=folder)
+            )
             new_uid = await run_blocking(
                 provider,
                 provider.update_draft,
@@ -181,6 +207,7 @@ class ComposeToolsMixin:
                 body,
                 cc=as_str_list(cc),
                 bcc=as_str_list(bcc),
+                attachments=files,
             )
             self._track_usage(sub, "mail_edit_draft")
             return DraftResult(
@@ -190,6 +217,9 @@ class ComposeToolsMixin:
                 from_address=getattr(provider, "email", None) or None,
                 subject=subject,
                 recipients=recipients,
+                # None here means the draft kept its own files, which is not
+                # the same fact as "it has none" -- say so rather than imply it.
+                attachments=[a.filename for a in files] if files is not None else None,
             )
 
         @self.app.tool(
@@ -210,6 +240,7 @@ class ComposeToolsMixin:
             reply_to_uid: Optional[str] = None,
             reply_to_folder: str = "INBOX",
             reply_all: bool = False,
+            attachments: Optional[Any] = None,
             confirm: bool = False,
             account: Optional[str] = None,
         ) -> SendResult:
@@ -230,10 +261,23 @@ class ComposeToolsMixin:
             one, otherwise From; subject prefixed "Re:"), and ``reply_all=true``
             cc's the other participants. The result's ``in_reply_to`` is the
             message this answered -- tell the user it went out as a reply.
+
+            ATTACHMENTS: a list of objects, each either
+            {"source_uid": "412", "source_index": 0, "source_folder": "INBOX"}
+            to send on a file already in the mailbox (indexes come from
+            mail_read) or {"filename": "x.pdf", "content_base64": "..."} for
+            bytes you supply. Prefer the first when forwarding something the
+            user received. Name every attachment in the approval you ask for --
+            a file leaving the mailbox is as much a decision as the recipient.
             """
             provider, sub = await self._get_provider(account, writes=True)
             if body is None:
                 raise ValidationError("'body' is required")
+            # Resolved before the confirm gate: a wrong uid or bad base64 must
+            # fail as a validation error while nothing has been sent, not after.
+            files = await resolve_attachments(
+                provider, attachments, default_folder=reply_to_folder
+            )
             recipients = as_str_list(to)
             cc_list = as_str_list(cc)
             in_reply_to = None
@@ -262,6 +306,7 @@ class ComposeToolsMixin:
                 bcc=as_str_list(bcc),
                 reply_to_uid=reply_to_uid,
                 reply_to_folder=reply_to_folder,
+                attachments=files,
             )
             self._track_usage(sub, "mail_send")
             return SendResult(
@@ -271,4 +316,5 @@ class ComposeToolsMixin:
                 from_address=getattr(provider, "email", None) or None,
                 subject=subject,
                 in_reply_to=in_reply_to,
+                attachments=[a.filename for a in files],
             )

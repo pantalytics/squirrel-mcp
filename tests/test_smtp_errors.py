@@ -24,7 +24,7 @@ def client():
 
 
 def test_socket_failure_names_host_and_port(client, monkeypatch):
-    def boom(msg, recipients):
+    def boom(msg, recipients, size_bytes):
         raise OSError(101, "Network is unreachable")
 
     monkeypatch.setattr(client, "_deliver", boom)
@@ -36,7 +36,7 @@ def test_socket_failure_names_host_and_port(client, monkeypatch):
 
 
 def test_smtp_protocol_failure_keeps_the_plain_message(client, monkeypatch):
-    def boom(msg, recipients):
+    def boom(msg, recipients, size_bytes):
         raise smtplib.SMTPRecipientsRefused({"a@b.com": (550, b"no")})
 
     monkeypatch.setattr(client, "_deliver", boom)
@@ -46,7 +46,7 @@ def test_smtp_protocol_failure_keeps_the_plain_message(client, monkeypatch):
 
 
 def test_auth_failure_is_an_auth_error(client, monkeypatch):
-    def boom(msg, recipients):
+    def boom(msg, recipients, size_bytes):
         raise smtplib.SMTPAuthenticationError(535, b"bad creds")
 
     monkeypatch.setattr(client, "_deliver", boom)

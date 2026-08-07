@@ -32,6 +32,9 @@ class FakeMailProvider:
         # Uids currently carrying \Flagged, so search/fetch report what flag()
         # did and a set-then-clear round trip is actually observable.
         self.flagged: set = set()
+        # Flipped off by a test to stand in for a backend that cannot send
+        # files, which is what every backend answers by default.
+        self.attachments_supported = True
         self._email = "me@example.com"
 
     @property
@@ -41,6 +44,10 @@ class FakeMailProvider:
     @property
     def is_authenticated(self) -> bool:
         return self.connected
+
+    @property
+    def supports_outgoing_attachments(self) -> bool:
+        return self.attachments_supported
 
     def connect(self) -> None:
         self.connected = True
@@ -116,15 +123,21 @@ class FakeMailProvider:
         folder="Drafts",
         reply_to_uid=None,
         reply_to_folder="INBOX",
+        attachments=None,
     ) -> str:
         self.drafts.append((to, subject, body, folder))
         self.draft_kwargs.append(
             {"cc": cc, "bcc": bcc, "reply_to_uid": reply_to_uid,
-             "reply_to_folder": reply_to_folder}
+             "reply_to_folder": reply_to_folder, "attachments": attachments}
         )
         return "900"
 
-    def update_draft(self, folder, uid, to, subject, body, *, cc=None, bcc=None) -> str:
+    def update_draft(
+        self, folder, uid, to, subject, body, *, cc=None, bcc=None, attachments=None
+    ) -> str:
+        self.draft_kwargs.append(
+            {"cc": cc, "bcc": bcc, "attachments": attachments, "edit_of": uid}
+        )
         return "901"
 
     def send(
@@ -137,11 +150,12 @@ class FakeMailProvider:
         bcc=None,
         reply_to_uid=None,
         reply_to_folder="INBOX",
+        attachments=None,
     ) -> dict:
         self.sent.append((to, subject, body))
         self.send_kwargs.append(
             {"cc": cc, "bcc": bcc, "reply_to_uid": reply_to_uid,
-             "reply_to_folder": reply_to_folder}
+             "reply_to_folder": reply_to_folder, "attachments": attachments}
         )
         return {
             "message_id": "<sent@example.com>",

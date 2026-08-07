@@ -19,11 +19,21 @@ from squirrel_mcp.providers.soverin.imap import SoverinImapClient
 PARENT = "<CABZfRwFBC1QPc3gd0R@mail.gmail.com>"
 
 
+class FakeAttachment:
+    def __init__(self, filename, content_type, payload):
+        self.filename = filename
+        self.content_type = content_type
+        self.payload = payload
+
+
 class FakeMessage:
-    def __init__(self, headers, uid="101"):
+    def __init__(self, headers, uid="101", attachments=()):
         # imap-tools hands headers back lowercased, each value a tuple.
         self.headers = {k.lower(): (v,) for k, v in headers.items()}
         self.uid = uid
+        # A real MailMessage always has this; an edit reads it to carry the
+        # draft's own files over, so the fake has to have it too.
+        self.attachments = list(attachments)
 
 
 class FakeMailBox:
@@ -132,6 +142,51 @@ def test_editing_an_ordinary_draft_invents_no_thread():
     _client(mb).update_draft("Drafts", "900", ["anna@example.com"], "Hello", "v2")
     raw = mb.appended[-1]
     assert "In-Reply-To:" not in raw and "References:" not in raw
+
+
+# ---- update_draft: the attachments ---------------------------------------- #
+
+
+def _draft_with_a_file():
+    return FakeMailBox(
+        FakeMessage(
+            {"Subject": "Invoice"},
+            uid="900",
+            attachments=[FakeAttachment("invoice.pdf", "application/pdf", b"%PDF-1.4 x")],
+        )
+    )
+
+
+def test_editing_a_draft_carries_its_attachments_over():
+    """Same trap as the threading, one step further on: the edit rewrites the
+    whole message, so a file the user attached a minute ago disappears when
+    they fix a typo in the covering note."""
+    mb = _draft_with_a_file()
+    _client(mb).update_draft("Drafts", "900", ["anna@example.com"], "Invoice", "typo fixed")
+    raw = mb.appended[-1]
+    assert "invoice.pdf" in raw
+    assert "Content-Type: multipart/mixed" in raw
+
+
+def test_editing_a_draft_can_deliberately_strip_the_attachments():
+    """[] is not the same as omitted -- one is a decision, the other is not."""
+    mb = _draft_with_a_file()
+    _client(mb).update_draft(
+        "Drafts", "900", ["anna@example.com"], "Invoice", "no file after all", attachments=[]
+    )
+    assert "invoice.pdf" not in mb.appended[-1]
+
+
+def test_editing_a_draft_can_replace_the_attachments():
+    from squirrel_mcp.providers.protocol import OutgoingAttachment
+
+    mb = _draft_with_a_file()
+    _client(mb).update_draft(
+        "Drafts", "900", ["anna@example.com"], "Invoice", "corrected file",
+        attachments=[OutgoingAttachment("invoice-v2.pdf", "application/pdf", b"%PDF-1.4 y")],
+    )
+    raw = mb.appended[-1]
+    assert "invoice-v2.pdf" in raw and "invoice.pdf" not in raw.replace("invoice-v2.pdf", "")
 
 
 def test_saving_a_reply_draft_writes_the_headers():

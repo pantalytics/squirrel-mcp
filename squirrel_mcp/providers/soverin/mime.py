@@ -6,6 +6,8 @@ import email.utils
 from email.message import EmailMessage
 from typing import List, Optional
 
+from ..protocol import OutgoingAttachment
+
 # How many parent Message-IDs a References header carries. RFC 5322 §3.6.4 lets
 # a client trim a long chain, and every mail client does -- a decade-old thread
 # would otherwise put kilobytes of header on every reply. Keeping the *first*
@@ -26,8 +28,9 @@ def build_email(
     message_id: Optional[str] = None,
     in_reply_to: Optional[str] = None,
     references: Optional[List[str]] = None,
+    attachments: Optional[List[OutgoingAttachment]] = None,
 ) -> EmailMessage:
-    """Assemble a plain-text EmailMessage with a stable Message-ID.
+    """Assemble an EmailMessage with a stable Message-ID.
 
     The Message-ID lets us find a freshly appended draft back on the IMAP server
     (many servers don't return APPENDUID reliably).
@@ -36,6 +39,14 @@ def build_email(
     rather than next to it. Without them a mail client has only the subject and
     the participants to go on, which Gmail will usually guess right and Outlook
     usually will not.
+
+    ``attachments`` is where "don't reinvent the wheel" pays for itself: neither
+    SMTP nor IMAP knows what an attachment is -- both carry one opaque RFC 5322
+    blob -- so a file is purely a MIME concern, and ``add_attachment`` already
+    handles all of it. It promotes the message to ``multipart/mixed``, picks
+    base64 (SMTP is 7-bit with a 998-octet line limit, so binary has no other
+    way across), and encodes a non-ASCII filename per RFC 2231. Which is why
+    this one function is the whole of it for both the SMTP and the IMAP path.
     """
     msg = EmailMessage()
     msg["From"] = from_addr
@@ -57,6 +68,16 @@ def build_email(
         # inside the 998-octet line limit for a long thread.
         msg["References"] = " ".join(references)
     msg.set_content(body or "")
+    for att in attachments or []:
+        maintype, _, subtype = (att.content_type or "").partition("/")
+        # A part needs both halves of a type. Anything we cannot split is
+        # treated as opaque bytes, which is what every client does with a type
+        # it does not recognise anyway.
+        if not maintype or not subtype:
+            maintype, subtype = "application", "octet-stream"
+        msg.add_attachment(
+            att.content, maintype=maintype, subtype=subtype, filename=att.filename
+        )
     return msg
 
 

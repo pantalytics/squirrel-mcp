@@ -75,6 +75,40 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   nearest ancestors. `tests/test_reply_threading.py` and
   `tests/test_imap_threading.py` pin the seams; the GreenMail e2e reads the
   delivered headers back off a real server.
+- **Sending an attachment is a MIME concern, not a protocol feature.** Neither
+  SMTP nor IMAP knows what an attachment is -- both carry one opaque RFC 5322
+  blob -- so the whole outgoing mechanism is `mime.build_email` handing files to
+  the stdlib's `add_attachment` (which promotes the message to
+  `multipart/mixed`, picks base64 and RFC 2231-encodes a non-ASCII filename).
+  One function, and both the SMTP and the IMAP-draft path get it, because both
+  already built their message there. Four decisions around it are load-bearing:
+  **How the bytes get in.** `tools/mail/attachments.py` takes either
+  `{"source_uid", "source_index"}` -- the provider fetches the part and hands it
+  straight back, so forwarding never routes a file through the model's context
+  -- or `{"filename", "content_base64"}` for bytes that exist nowhere else.
+  There is deliberately **no file path**: the hosted multi-tenant server shares
+  this exact tool layer, where a path is an arbitrary read of the *server's*
+  disk, and one argument meaning two things per deployment is the divergence
+  everything else here is held against.
+  **Refusing beats dropping.** A provider advertises
+  `supports_outgoing_attachments`, read as `getattr(..., False)`. A backend that
+  merely ignored the kwarg would send the mail *without* the file and report
+  success -- so the Graph provider in the admin package, which cannot do this
+  yet, gets a clear refusal rather than silent data loss.
+  **The limit comes from the server.** `smtp._check_size` reads SMTP's SIZE
+  extension (RFC 1870) out of the EHLO reply and refuses before DATA -- Soverin
+  answers 70 MiB, Gmail 35 -- so there is no per-provider number to keep
+  current. `MAX_OUTGOING_TOTAL_BYTES` is a separate, smaller ceiling: what the
+  *receiving* world accepts. And the socket timeout now scales with the payload,
+  because a flat 10s silently demanded a 20 Mbit/s uplink to send 25 MB.
+  **An edit keeps what it does not mention.** Exactly like the threading above:
+  `update_draft` re-reads the old revision's attachments when `attachments` is
+  None, because fixing a typo in a covering note must not drop the file the note
+  is about. `[]` strips them on purpose. Inline (`Content-ID` /
+  `multipart/related`) is *not* implemented outgoing: it only means anything
+  against an HTML body that references the part, and the tool layer composes
+  plain text. `tests/test_attachments_outgoing.py` pins the seams; the GreenMail
+  e2e proves a real server takes it and hands the same bytes back.
 - `providers/soverin/contacts.py` **discovers** the address-book home rather than
   assuming a path. CardDAV standardises none, so `carddav_url` is a starting
   point: RFC 6764's `current-user-principal` → `addressbook-home-set` hops turn a

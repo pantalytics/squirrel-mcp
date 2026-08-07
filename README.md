@@ -37,14 +37,22 @@ is configured.
 | `mail_read` | Read one message (large bodies are truncated) | read-only |
 | `mail_read_chunk` | Fetch the next slice of a large body | read-only |
 | `mail_get_attachment` | Download one attachment | read-only |
-| `mail_draft` / `mail_edit_draft` | Create / update a draft in Drafts | writes to Drafts |
-| `mail_send` | Send a message — **requires `confirm=true`** | ⚠️ outgoing |
+| `mail_draft` / `mail_edit_draft` | Create / update a draft in Drafts, attachments included | writes to Drafts |
+| `mail_send` | Send a message, attachments included — **requires `confirm=true`** | ⚠️ outgoing |
 | `mail_move` | Move messages between folders — **requires `confirm=true`** | ⚠️ mutating |
 | `mail_flag` | Flag / unflag messages — the star, `flagged=false` clears it | reversible |
 
 Flagging and finding are two halves of one thing: `mail_flag` sets the marker,
 `mail_search(flagged_only=true)` gets those messages back — filtered by the
 server, not by paging a folder.
+
+**Attachments** go both ways. `mail_read` lists them and `mail_get_attachment`
+downloads one; sending takes an `attachments` list on `mail_send`, `mail_draft`
+and `mail_edit_draft`. Each entry either points at a file already in the mailbox
+— `{"source_uid": "412", "source_index": 0}`, which is how forwarding works and
+never copies the bytes through the AI client — or carries its own
+`{"filename": ..., "content_base64": ...}`. Editing a draft keeps the files it
+already has unless you say otherwise.
 
 **Replies land in the thread.** `mail_send` and `mail_draft` take a
 `reply_to_uid` (the message being answered, plus the `reply_to_folder` it lives
