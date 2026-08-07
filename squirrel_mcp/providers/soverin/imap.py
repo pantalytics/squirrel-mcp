@@ -35,6 +35,7 @@ from ..protocol import (
     MailProviderError,
     MessageDetail,
     MessageSummary,
+    OutgoingAttachment,
 )
 from .mime import build_email, parse_references, reply_chain
 
@@ -258,6 +259,7 @@ class SoverinImapClient:
         folder: Optional[str] = None,
         in_reply_to: Optional[str] = None,
         references: Optional[List[str]] = None,
+        attachments: Optional[List[OutgoingAttachment]] = None,
     ) -> str:
         target = folder or self._drafts_folder
         msg = build_email(
@@ -269,6 +271,7 @@ class SoverinImapClient:
             bcc=bcc,
             in_reply_to=in_reply_to,
             references=references,
+            attachments=attachments,
         )
         message_id = msg["Message-ID"]
 
@@ -290,6 +293,7 @@ class SoverinImapClient:
         *,
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
+        attachments: Optional[List[OutgoingAttachment]] = None,
     ) -> str:
         target = folder or self._drafts_folder
 
@@ -305,6 +309,19 @@ class SoverinImapClient:
             old_headers = existing[0].headers
             old_in_reply_to = (old_headers.get("in-reply-to") or ("",))[0].strip() or None
             old_references = parse_references((old_headers.get("references") or ("",))[0])
+            # Attachments are the same trap one step further on: fixing a typo
+            # in the covering note must not drop the file the note is about.
+            # None means keep, [] means the caller meant to strip them.
+            carried = attachments
+            if carried is None:
+                carried = [
+                    OutgoingAttachment(
+                        filename=att.filename or "attachment",
+                        content_type=att.content_type or "application/octet-stream",
+                        content=att.payload,
+                    )
+                    for att in existing[0].attachments
+                ]
             msg = build_email(
                 self._email,
                 to,
@@ -314,6 +331,7 @@ class SoverinImapClient:
                 bcc=bcc,
                 in_reply_to=old_in_reply_to,
                 references=old_references,
+                attachments=carried,
             )
             message_id = msg["Message-ID"]
             mb.append(msg.as_bytes(), target, flag_set=[MailMessageFlags.DRAFT])

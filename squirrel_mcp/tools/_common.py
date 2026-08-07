@@ -23,6 +23,14 @@ logger = get_logger("squirrel_mcp.tools")
 # Cap on bytes returned inline for an attachment (base64 inflates ~33%).
 MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
 
+# Cap on everything hung on one outgoing message, decoded. This is not a guess
+# at what the sending server accepts -- that number comes from the server
+# itself, over SMTP's SIZE extension, at send time. It is the ceiling of the
+# *receiving* world: Gmail and Outlook both refuse past 25 MB, so a larger
+# message is one we would encode, upload and watch bounce. It also bounds what
+# a single tool call can hold in memory.
+MAX_OUTGOING_TOTAL_BYTES = 25 * 1024 * 1024
+
 # Contextvar carrying the current subject from the handler to helpers. Standalone
 # is always "stdio"; the admin package sets a real per-user subject.
 _current_sub: contextvars.ContextVar[str] = contextvars.ContextVar("_current_sub", default="stdio")

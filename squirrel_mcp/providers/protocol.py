@@ -108,6 +108,31 @@ class AttachmentPayload:
     content: bytes
 
 
+@dataclass
+class OutgoingAttachment:
+    """A file to hang on a message we are about to send or draft.
+
+    Deliberately just bytes plus a name and a type: *how* that becomes an
+    attachment is the transport's business, exactly like threading. Over
+    IMAP/SMTP it turns into a MIME part in a ``multipart/mixed``; an API
+    backend posts it to whatever attachment collection it keeps.
+
+    There is no ``content_id`` and no inline flag. Inline only means anything
+    against an HTML body that references the part with ``cid:``, and the tool
+    layer composes plain text -- a ``multipart/related`` holding an image
+    nothing points at renders differently in every client, which is worse than
+    an honest attachment. Inline sending waits for an HTML compose path.
+    """
+
+    filename: str
+    content_type: str
+    content: bytes
+
+    @property
+    def size(self) -> int:
+        return len(self.content)
+
+
 @runtime_checkable
 class MailProvider(Protocol):
     """Interface every mail backend must satisfy.
@@ -119,6 +144,19 @@ class MailProvider(Protocol):
 
     @property
     def is_authenticated(self) -> bool: ...
+
+    @property
+    def supports_outgoing_attachments(self) -> bool:
+        """Whether ``send``/``save_draft`` here can carry attachments.
+
+        Read through ``getattr(provider, ..., False)``, so a backend written
+        before attachments existed answers False without being touched. That
+        default is the point: a provider that ignores an ``attachments`` kwarg
+        would send the mail *without* the file and report success, and silent
+        data loss is the one outcome worse than a refusal. The tool layer
+        checks this before it accepts a single byte.
+        """
+        ...
 
     @property
     def email(self) -> str:
@@ -180,10 +218,12 @@ class MailProvider(Protocol):
         folder: str = "Drafts",
         reply_to_uid: Optional[str] = None,
         reply_to_folder: str = "INBOX",
+        attachments: Optional[List[OutgoingAttachment]] = None,
     ) -> str:
         """Append a new draft to the Drafts folder. Returns its uid.
 
         ``reply_to_uid`` threads the draft onto that message -- see ``send``.
+        ``attachments`` requires ``supports_outgoing_attachments``.
         """
         ...
 
@@ -197,6 +237,7 @@ class MailProvider(Protocol):
         *,
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
+        attachments: Optional[List[OutgoingAttachment]] = None,
     ) -> str:
         """Replace an existing draft. Returns the new uid.
 
@@ -205,6 +246,12 @@ class MailProvider(Protocol):
         here -- a draft can only be threaded when it is created (Graph mints
         the conversation then), so turning an ordinary draft into a reply means
         saving a new one.
+
+        ``attachments`` follows the same rule as the threading, for the same
+        reason: ``None`` means *keep what the draft already carries*, because
+        an edit rewrites the message and a file the user attached a minute ago
+        would otherwise vanish at the moment they fixed a typo. Pass ``[]`` to
+        deliberately strip them.
         """
         ...
 
@@ -218,6 +265,7 @@ class MailProvider(Protocol):
         bcc: Optional[List[str]] = None,
         reply_to_uid: Optional[str] = None,
         reply_to_folder: str = "INBOX",
+        attachments: Optional[List[OutgoingAttachment]] = None,
     ) -> dict:
         """Send a message. Returns {'message_id': ..., 'recipients': [...]}.
 

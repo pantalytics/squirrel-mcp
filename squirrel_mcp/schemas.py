@@ -114,6 +114,11 @@ class DraftResult(BaseModel):
         default=None,
         description="Message-ID this draft replies to; null for a new conversation",
     )
+    attachments: Optional[List[str]] = Field(
+        default=None,
+        description="Filenames attached to the draft. Null after an edit that left "
+        "the draft's existing attachments alone -- which is not the same as none.",
+    )
 
 
 class SendResult(BaseModel):
@@ -130,6 +135,10 @@ class SendResult(BaseModel):
         default=None,
         description="Message-ID this reply threads onto; null if sent as a new "
         "conversation. Repeat it back so the user knows it landed in the thread.",
+    )
+    attachments: List[str] = Field(
+        default_factory=list,
+        description="Filenames that went out with the message -- repeat them back",
     )
 
 

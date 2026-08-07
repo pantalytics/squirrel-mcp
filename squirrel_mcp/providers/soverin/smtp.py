@@ -13,7 +13,7 @@ from email.message import EmailMessage
 from typing import List, Optional
 
 from ...logging_config import get_logger
-from ..protocol import MailAuthError, MailProviderError
+from ..protocol import MailAuthError, MailProviderError, OutgoingAttachment
 from .mime import all_recipients, build_email
 
 logger = get_logger(__name__)
@@ -23,6 +23,19 @@ logger = get_logger(__name__)
 # 2x this before the error surfaces -- keep it short enough that a blocked
 # port reads as a quick, clear failure rather than a minute of dead air.
 SMTP_TIMEOUT = 10
+
+# The socket timeout smtplib sets at connect covers every later operation --
+# including the single ``sendall`` that pushes the whole DATA payload. At 10
+# seconds flat that silently demanded a ~20 Mbit/s uplink to send 25 MB, so an
+# attachment on a domestic connection would have died as a timeout that reads
+# like an unreachable server. Stretch the budget by the payload instead: this
+# is a ceiling, not a wait, so being generous costs nothing when the link is
+# fast and rescues the send when it is not.
+MIN_UPLOAD_BYTES_PER_SEC = 50 * 1024
+
+
+def _timeout_for(size_bytes: int) -> int:
+    return SMTP_TIMEOUT + size_bytes // MIN_UPLOAD_BYTES_PER_SEC
 
 
 class SoverinSmtpClient:
@@ -63,6 +76,7 @@ class SoverinSmtpClient:
         bcc: Optional[List[str]] = None,
         in_reply_to: Optional[str] = None,
         references: Optional[List[str]] = None,
+        attachments: Optional[List[OutgoingAttachment]] = None,
     ) -> dict:
         """Send a message and return {'message_id', 'recipients'}.
 
@@ -79,6 +93,7 @@ class SoverinSmtpClient:
             bcc=bcc,
             in_reply_to=in_reply_to,
             references=references,
+            attachments=attachments,
         )
         recipients = all_recipients(to, cc, bcc)
         if not recipients:
@@ -90,7 +105,7 @@ class SoverinSmtpClient:
             del msg["Bcc"]
 
         try:
-            self._deliver(msg, recipients)
+            self._deliver(msg, recipients, len(msg.as_bytes()))
         except smtplib.SMTPAuthenticationError as exc:
             raise MailAuthError(f"SMTP authentication failed: {exc}") from exc
         except smtplib.SMTPException as exc:
@@ -112,19 +127,48 @@ class SoverinSmtpClient:
         logger.info("Sent message %s to %d recipient(s)", message_id, len(recipients))
         return {"message_id": message_id, "recipients": recipients}
 
-    def _deliver(self, msg: EmailMessage, recipients: List[str]) -> None:
+    def _deliver(self, msg: EmailMessage, recipients: List[str], size_bytes: int) -> None:
+        timeout = _timeout_for(size_bytes)
         if self._security == "ssl":
             with smtplib.SMTP_SSL(
-                self._host, self._port, timeout=SMTP_TIMEOUT, context=self._ssl_context()
+                self._host, self._port, timeout=timeout, context=self._ssl_context()
             ) as server:
                 server.login(self._username, self._password)
+                self._check_size(server, size_bytes)
                 server.send_message(msg, from_addr=self._email, to_addrs=recipients)
             return
 
-        with smtplib.SMTP(self._host, self._port, timeout=SMTP_TIMEOUT) as server:
+        with smtplib.SMTP(self._host, self._port, timeout=timeout) as server:
             server.ehlo()
             if self._security == "starttls":
                 server.starttls(context=self._ssl_context())
                 server.ehlo()
             server.login(self._username, self._password)
+            self._check_size(server, size_bytes)
             server.send_message(msg, from_addr=self._email, to_addrs=recipients)
+
+    @staticmethod
+    def _check_size(server: smtplib.SMTP, size_bytes: int) -> None:
+        """Refuse before DATA what the server would refuse after it.
+
+        SMTP's SIZE extension (RFC 1870) has the server advertise its own
+        maximum in the EHLO reply, so there is nothing to look up per provider
+        and nothing to keep up to date in a table -- Soverin answers
+        ``SIZE 73400320`` (70 MiB), Gmail 35 MiB, and each says so itself.
+        Asking it here turns "552 message too large" arriving after a full
+        upload into an error that names both numbers before a byte is sent.
+
+        A server that advertises no SIZE, or advertises 0 (meaning "no stated
+        limit"), is left alone -- guessing a ceiling for it would invent the
+        very failure this avoids.
+        """
+        try:
+            limit = int(server.esmtp_features.get("size", 0))
+        except (TypeError, ValueError):
+            return
+        if limit and size_bytes > limit:
+            raise MailProviderError(
+                f"Message is {size_bytes / 1_048_576:.1f} MB, over this server's "
+                f"{limit / 1_048_576:.1f} MB limit. Attachments travel base64-encoded, "
+                f"which adds about a third -- send a smaller file or a link instead."
+            )

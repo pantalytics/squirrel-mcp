@@ -30,6 +30,19 @@ Mail tools (all prefixed `mail_`):
   body and the account it will be sent from, and get explicit approval BEFORE
   calling it with confirm=true. The result's `from_address` is the address the
   message actually went out from -- repeat it back to the user.
+- ATTACHMENTS go out via the `attachments` argument on mail_send, mail_draft and
+  mail_edit_draft. Two forms, and the choice matters: to send on a file that is
+  already in the mailbox -- forwarding an invoice, passing on a contract -- use
+  `{"source_uid": "<uid>", "source_index": <n>, "source_folder": "INBOX"}` with
+  the index from mail_read, and the file never passes through you at all. Only
+  use `{"filename": "...", "content_base64": "..."}` for bytes that exist
+  nowhere else, and keep them small: base64 is a third larger than the file and
+  every byte of it costs you context. NEVER call mail_get_attachment and paste
+  the result back as content_base64 -- that is the same file twice through you
+  when source_uid would have moved it for nothing. Name every attachment when
+  you ask the user to approve a send: a file leaving the mailbox is as much a
+  decision as the recipient is. Editing a draft leaves its existing attachments
+  alone unless you pass the argument.
 - REPLYING is not the same as sending: whenever the user is answering a message
   they just read, pass that message's uid as `reply_to_uid` (plus the
   `reply_to_folder` it lives in) to mail_send or mail_draft. Only that puts the
