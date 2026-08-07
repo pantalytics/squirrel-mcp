@@ -129,6 +129,7 @@ class SoverinMailProvider:
         reply_to_uid: Optional[str] = None,
         reply_to_folder: str = "INBOX",
         attachments: Optional[List[OutgoingAttachment]] = None,
+        body_html: Optional[str] = None,
     ) -> str:
         in_reply_to, references = self._reply_headers(reply_to_uid, reply_to_folder)
         return self._imap.save_draft(
@@ -141,6 +142,7 @@ class SoverinMailProvider:
             in_reply_to=in_reply_to,
             references=references,
             attachments=attachments,
+            body_html=body_html,
         )
 
     def update_draft(
@@ -154,9 +156,11 @@ class SoverinMailProvider:
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
         attachments: Optional[List[OutgoingAttachment]] = None,
+        body_html: Optional[str] = None,
     ) -> str:
         return self._imap.update_draft(
-            folder, uid, to, subject, body, cc=cc, bcc=bcc, attachments=attachments
+            folder, uid, to, subject, body, cc=cc, bcc=bcc,
+            attachments=attachments, body_html=body_html,
         )
 
     def move(self, folder: str, uids: List[str], destination: str) -> int:
@@ -177,6 +181,7 @@ class SoverinMailProvider:
         reply_to_uid: Optional[str] = None,
         reply_to_folder: str = "INBOX",
         attachments: Optional[List[OutgoingAttachment]] = None,
+        body_html: Optional[str] = None,
     ) -> dict:
         in_reply_to, references = self._reply_headers(reply_to_uid, reply_to_folder)
         return self._smtp.send(
@@ -188,4 +193,5 @@ class SoverinMailProvider:
             in_reply_to=in_reply_to,
             references=references,
             attachments=attachments,
+            body_html=body_html,
         )

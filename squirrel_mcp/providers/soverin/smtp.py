@@ -77,6 +77,7 @@ class SoverinSmtpClient:
         in_reply_to: Optional[str] = None,
         references: Optional[List[str]] = None,
         attachments: Optional[List[OutgoingAttachment]] = None,
+        body_html: Optional[str] = None,
     ) -> dict:
         """Send a message and return {'message_id', 'recipients'}.
 
@@ -94,6 +95,7 @@ class SoverinSmtpClient:
             in_reply_to=in_reply_to,
             references=references,
             attachments=attachments,
+            body_html=body_html,
         )
         recipients = all_recipients(to, cc, bcc)
         if not recipients:

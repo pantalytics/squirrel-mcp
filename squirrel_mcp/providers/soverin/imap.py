@@ -260,6 +260,7 @@ class SoverinImapClient:
         in_reply_to: Optional[str] = None,
         references: Optional[List[str]] = None,
         attachments: Optional[List[OutgoingAttachment]] = None,
+        body_html: Optional[str] = None,
     ) -> str:
         target = folder or self._drafts_folder
         msg = build_email(
@@ -272,6 +273,7 @@ class SoverinImapClient:
             in_reply_to=in_reply_to,
             references=references,
             attachments=attachments,
+            body_html=body_html,
         )
         message_id = msg["Message-ID"]
 
@@ -294,6 +296,7 @@ class SoverinImapClient:
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
         attachments: Optional[List[OutgoingAttachment]] = None,
+        body_html: Optional[str] = None,
     ) -> str:
         target = folder or self._drafts_folder
 
@@ -332,6 +335,7 @@ class SoverinImapClient:
                 in_reply_to=old_in_reply_to,
                 references=old_references,
                 attachments=carried,
+                body_html=body_html,
             )
             message_id = msg["Message-ID"]
             mb.append(msg.as_bytes(), target, flag_set=[MailMessageFlags.DRAFT])

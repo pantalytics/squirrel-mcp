@@ -85,6 +85,7 @@ class ComposeToolsMixin:
             reply_to_folder: str = "INBOX",
             reply_all: bool = False,
             attachments: Optional[Any] = None,
+            body_html: Optional[str] = None,
             account: Optional[str] = None,
         ) -> DraftResult:
             """Save a new draft to the Drafts folder (nothing is sent).
@@ -106,6 +107,13 @@ class ComposeToolsMixin:
             mail_read) or {"filename": "x.pdf", "content_base64": "..."} for
             bytes you supply. ALWAYS prefer the first form when forwarding
             something the user received -- it copies nothing through you.
+
+            EMBEDDING AN IMAGE: pass ``body_html`` (the rich version of the
+            same message -- ``body`` stays the plain text and is still what a
+            plain-text client shows) and mark the attachment ``"inline": true``
+            with a ``"content_id"``, then refer to it from the HTML as
+            ``<img src="cid:that-id">``. Without an HTML body pointing at it,
+            an inline file simply arrives as an ordinary attachment.
             """
             provider, sub = await self._get_provider(account, writes=True)
             if body is None:
@@ -142,6 +150,7 @@ class ComposeToolsMixin:
                 reply_to_uid=reply_to_uid,
                 reply_to_folder=reply_to_folder,
                 attachments=files,
+                body_html=body_html,
             )
             self._track_usage(sub, "mail_draft")
             return DraftResult(
@@ -173,6 +182,7 @@ class ComposeToolsMixin:
             bcc: Optional[Any] = None,
             folder: str = "Drafts",
             attachments: Optional[Any] = None,
+            body_html: Optional[str] = None,
             account: Optional[str] = None,
         ) -> DraftResult:
             """Replace an existing draft with new content. Returns the new uid.
@@ -185,6 +195,8 @@ class ComposeToolsMixin:
             ATTACHMENTS: omit the argument and whatever the draft already
             carries is kept -- fixing a typo does not drop the file. Pass a list
             (same shape as mail_draft) to replace them, or [] to strip them.
+            ``body_html`` is rewritten like the rest of the draft, so re-pass
+            it when editing a message that had one.
             """
             provider, sub = await self._get_provider(account, writes=True)
             recipients = as_str_list(to)
@@ -208,6 +220,7 @@ class ComposeToolsMixin:
                 cc=as_str_list(cc),
                 bcc=as_str_list(bcc),
                 attachments=files,
+                body_html=body_html,
             )
             self._track_usage(sub, "mail_edit_draft")
             return DraftResult(
@@ -241,6 +254,7 @@ class ComposeToolsMixin:
             reply_to_folder: str = "INBOX",
             reply_all: bool = False,
             attachments: Optional[Any] = None,
+            body_html: Optional[str] = None,
             confirm: bool = False,
             account: Optional[str] = None,
         ) -> SendResult:
@@ -269,6 +283,13 @@ class ComposeToolsMixin:
             bytes you supply. Prefer the first when forwarding something the
             user received. Name every attachment in the approval you ask for --
             a file leaving the mailbox is as much a decision as the recipient.
+
+            EMBEDDING AN IMAGE: pass ``body_html`` (the rich version of the
+            same message -- ``body`` stays the plain text and is still what a
+            plain-text client shows) and mark the attachment ``"inline": true``
+            with a ``"content_id"``, then refer to it from the HTML as
+            ``<img src="cid:that-id">``. Without an HTML body pointing at it,
+            an inline file simply arrives as an ordinary attachment.
             """
             provider, sub = await self._get_provider(account, writes=True)
             if body is None:
@@ -307,6 +328,7 @@ class ComposeToolsMixin:
                 reply_to_uid=reply_to_uid,
                 reply_to_folder=reply_to_folder,
                 attachments=files,
+                body_html=body_html,
             )
             self._track_usage(sub, "mail_send")
             return SendResult(

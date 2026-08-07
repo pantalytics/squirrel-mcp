@@ -395,3 +395,52 @@ def test_a_draft_keeps_its_attachment_through_an_edit(provider):
     (att,) = detail.attachments
     assert att.filename == "contract.pdf"
     assert p.fetch_attachment("Drafts", new_uid, 0).content == payload
+
+
+def test_an_inline_image_arrives_related_to_the_html_that_shows_it(provider):
+    """The placement, proved against a real server rather than in a tree.
+
+    Building the right structure and *delivering* it are different facts: the
+    image has to reach the recipient inside multipart/related, beside the HTML,
+    carrying the Content-ID the cid: URL names -- or they get a broken image
+    and a stray paperclip. The plain-text half must survive too, since that is
+    what a client without HTML shows.
+    """
+    p, cfg = provider
+    subject = f"E2E inline {uuid.uuid4().hex[:8]}"
+    p.send(
+        [TEST_EMAIL], subject, "Plain text version.",
+        body_html='<p>Logo: <img src="cid:logo-1"></p>',
+        attachments=[
+            OutgoingAttachment(
+                filename="logo.png", content_type="image/png",
+                content=b"\x89PNG-inline", inline=True, content_id="logo-1",
+            ),
+        ],
+    )
+
+    mb = MailBoxUnencrypted(cfg.imap_host, port=cfg.imap_port).login(TEST_LOGIN, TEST_PASSWORD)
+    try:
+        delivered = [m for m in mb.fetch(mark_seen=False) if (m.subject or "") == subject]
+        assert delivered, "inline message was not delivered"
+        raw = delivered[-1].obj  # the delivered message, already parsed
+
+        related = None
+        for part in raw.walk():
+            if part.get_content_type() == "multipart/related":
+                related = part
+        assert related is not None, "no multipart/related in the delivered message"
+        assert [q.get_content_type() for q in related.get_payload()] == [
+            "text/html", "image/png",
+        ]
+
+        embedded = related.get_payload()[1]
+        assert embedded["Content-ID"] == "<logo-1>"
+        assert embedded.get_content_disposition() == "inline"
+        assert embedded.get_payload(decode=True) == b"\x89PNG-inline"
+
+        # Both bodies arrived: offering a rich one must not cost a plain-text
+        # client the message.
+        assert "Plain text version." in (delivered[-1].text or "")
+    finally:
+        mb.logout()
