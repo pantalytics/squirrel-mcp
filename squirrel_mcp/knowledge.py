@@ -43,6 +43,13 @@ Mail tools (all prefixed `mail_`):
   you ask the user to approve a send: a file leaving the mailbox is as much a
   decision as the recipient is. Editing a draft leaves its existing attachments
   alone unless you pass the argument.
+- EMBEDDING AN IMAGE in the message rather than hanging it off: pass `body_html`
+  alongside `body` (the plain text stays, and is what a client without HTML
+  shows), mark the attachment `"inline": true` with a `"content_id"`, and refer
+  to it from the HTML as `<img src="cid:that-id">`. The reference is what makes
+  it show; an inline file with no HTML pointing at it simply arrives as an
+  ordinary attachment. Use it for signatures and screenshots that belong in the
+  flow of the text, not to dress up a message the user asked to keep plain.
 - REPLYING is not the same as sending: whenever the user is answering a message
   they just read, pass that message's uid as `reply_to_uid` (plus the
   `reply_to_folder` it lives in) to mail_send or mail_draft. Only that puts the

@@ -117,16 +117,21 @@ class OutgoingAttachment:
     IMAP/SMTP it turns into a MIME part in a ``multipart/mixed``; an API
     backend posts it to whatever attachment collection it keeps.
 
-    There is no ``content_id`` and no inline flag. Inline only means anything
-    against an HTML body that references the part with ``cid:``, and the tool
-    layer composes plain text -- a ``multipart/related`` holding an image
-    nothing points at renders differently in every client, which is worse than
-    an honest attachment. Inline sending waits for an HTML compose path.
+    ``inline`` and ``content_id`` are the HTML compose path this dataclass once
+    said it was waiting for. The reasoning that kept them out still holds and
+    is now enforced rather than avoided: a ``multipart/related`` holding an
+    image nothing points at renders differently in every client, so an inline
+    part is only *placed* inline when there is a ``body_html`` that could carry
+    the ``cid:`` reference, and it degrades to an honest attachment when there
+    is not. The tool layer fills a ``content_id`` in for every inline part,
+    since a part nothing can name is a part nothing can show.
     """
 
     filename: str
     content_type: str
     content: bytes
+    inline: bool = False
+    content_id: Optional[str] = None
 
     @property
     def size(self) -> int:
@@ -219,11 +224,13 @@ class MailProvider(Protocol):
         reply_to_uid: Optional[str] = None,
         reply_to_folder: str = "INBOX",
         attachments: Optional[List[OutgoingAttachment]] = None,
+        body_html: Optional[str] = None,
     ) -> str:
         """Append a new draft to the Drafts folder. Returns its uid.
 
         ``reply_to_uid`` threads the draft onto that message -- see ``send``.
         ``attachments`` requires ``supports_outgoing_attachments``.
+        ``body_html`` is what ``send`` documents.
         """
         ...
 
@@ -238,6 +245,7 @@ class MailProvider(Protocol):
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
         attachments: Optional[List[OutgoingAttachment]] = None,
+        body_html: Optional[str] = None,
     ) -> str:
         """Replace an existing draft. Returns the new uid.
 
@@ -266,6 +274,7 @@ class MailProvider(Protocol):
         reply_to_uid: Optional[str] = None,
         reply_to_folder: str = "INBOX",
         attachments: Optional[List[OutgoingAttachment]] = None,
+        body_html: Optional[str] = None,
     ) -> dict:
         """Send a message. Returns {'message_id': ..., 'recipients': [...]}.
 
@@ -275,6 +284,13 @@ class MailProvider(Protocol):
         sends the matching headers; an API backend may have a conversation of
         its own to join. Recipients and subject are not derived here -- the
         caller passes what it means to send.
+
+        ``body_html`` is the rich half of the same message: ``body`` stays the
+        text a client without HTML shows, and a backend that can carry both
+        carries both. It is also the only thing that makes an ``inline``
+        attachment visible, since what displays a part is the body's ``cid:``
+        reference to it -- so a backend with nowhere to put a second body
+        (Graph's message has one) says so rather than pretending.
         """
         ...
 

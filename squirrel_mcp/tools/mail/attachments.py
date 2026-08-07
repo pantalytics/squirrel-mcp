@@ -13,6 +13,12 @@ Two ways to name a file, and the choice between them is the whole design here.
   hundred thousand tokens. Fine for something small and generated, wasteful for
   anything the mailbox already holds.
 
+Either form takes ``"inline": true`` (plus an optional ``"content_id"``) to
+embed an image in the body rather than hang it off the message. That only
+renders against a ``body_html`` referring to the part as ``cid:<id>``; without
+one it stays an ordinary attachment, which is the honest outcome rather than a
+``multipart/related`` nothing points into.
+
 There is deliberately **no file path**. In the local single-mailbox deployment
 it would be the obvious third option, but the hosted multi-tenant server shares
 this exact tool layer, and a path there is an arbitrary read of the *server's*
@@ -26,11 +32,17 @@ from __future__ import annotations
 import base64
 import binascii
 import mimetypes
+import re
 from typing import Any, List, Optional
 
 from ...error_handling import ValidationError
 from ...providers.protocol import OutgoingAttachment
 from .._common import MAX_OUTGOING_TOTAL_BYTES, run_blocking
+
+# Everything a Content-ID must not contain. It travels inside angle brackets in
+# a header and is matched against a ``cid:`` URL in the HTML body, so anything
+# needing quoting or escaping is replaced rather than sent and hoped for.
+_CID_UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _guess_content_type(filename: str, given: Optional[str]) -> str:
@@ -38,6 +50,26 @@ def _guess_content_type(filename: str, given: Optional[str]) -> str:
         return given
     guessed, _encoding = mimetypes.guess_type(filename or "")
     return guessed or "application/octet-stream"
+
+
+def _content_id(given: Any, filename: str, index: int) -> str:
+    """Normalise a caller's content id, or invent one from the filename.
+
+    A model writes the same id three ways -- bare (``logo``), as the URL it put
+    in the body (``cid:logo``), or as the header spelling (``<logo>``) -- and
+    all three mean one part. They reduce to the bare form here, which is what
+    the HTML's ``cid:`` names and what the header wraps in brackets. An inline
+    part with no id at all still gets one: a part nothing can name is a part
+    nothing can show.
+    """
+    raw = str(given or "").strip()
+    if raw.lower().startswith("cid:"):
+        raw = raw[4:]
+    cleaned = _CID_UNSAFE.sub("-", raw.strip("<>").strip()).strip("-")
+    if cleaned:
+        return cleaned
+    stem = _CID_UNSAFE.sub("-", (filename or "").rsplit(".", 1)[0]).strip("-")
+    return f"{stem or 'inline'}-{index}"
 
 
 def _decode(spec_index: int, raw: Any) -> bytes:
@@ -97,6 +129,9 @@ async def resolve_attachments(
             )
 
         source_uid = spec.get("source_uid")
+        # "inline" is the caller's intent; whether it is honoured depends on
+        # there being an HTML body, which only the MIME layer can see.
+        inline = bool(spec.get("inline"))
         has_inline = spec.get("content_base64") is not None
         if source_uid and has_inline:
             raise ValidationError(
@@ -118,11 +153,16 @@ async def resolve_attachments(
                 str(source_uid),
                 index,
             )
+            filename = str(spec.get("filename") or payload.filename)
             resolved.append(
                 OutgoingAttachment(
-                    filename=str(spec.get("filename") or payload.filename),
+                    filename=filename,
                     content_type=_guess_content_type(payload.filename, payload.content_type),
                     content=payload.content,
+                    inline=inline,
+                    content_id=(
+                        _content_id(spec.get("content_id"), filename, i) if inline else None
+                    ),
                 )
             )
         elif has_inline:
@@ -138,6 +178,10 @@ async def resolve_attachments(
                     filename=filename,
                     content_type=_guess_content_type(filename, spec.get("content_type")),
                     content=content,
+                    inline=inline,
+                    content_id=(
+                        _content_id(spec.get("content_id"), filename, i) if inline else None
+                    ),
                 )
             )
         else:

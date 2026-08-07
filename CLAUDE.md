@@ -104,11 +104,30 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   **An edit keeps what it does not mention.** Exactly like the threading above:
   `update_draft` re-reads the old revision's attachments when `attachments` is
   None, because fixing a typo in a covering note must not drop the file the note
-  is about. `[]` strips them on purpose. Inline (`Content-ID` /
-  `multipart/related`) is *not* implemented outgoing: it only means anything
-  against an HTML body that references the part, and the tool layer composes
-  plain text. `tests/test_attachments_outgoing.py` pins the seams; the GreenMail
+  is about. `[]` strips them on purpose.
+  `tests/test_attachments_outgoing.py` pins the seams; the GreenMail
   e2e proves a real server takes it and hands the same bytes back.
+- **Inline is the HTML compose path that unblocked it.** Inline was deferred
+  above for a good reason -- it means nothing without an HTML body referencing
+  the part -- so `body_html` came first and the reason is now *enforced* rather
+  than avoided. `body_html` is added as an **alternative**: `body` stays the
+  text a plain-text client shows, and both halves are the same message. An
+  attachment marked `inline` (with a `content_id` the tool layer fills in when
+  the caller omits one, since a part nothing can name is a part nothing can
+  show) is only *placed* inline when there is HTML to point at it, and
+  degrades to an ordinary attachment when there is not — keeping its
+  `Content-ID` for a client that wants it anyway. That placement is the whole
+  feature and lives in `mime._add_parts`: an inline part goes inside
+  `multipart/related` next to the HTML, because a client resolves `cid:` within
+  that group and nowhere else, while the same image parked in the outer
+  `multipart/mixed` beside the paperclips renders in some clients and arrives
+  as a second paperclip in the rest. So `mixed[alternative[text,
+  related[html, image]], file]` is the shape, and a message with neither HTML
+  nor attachments is still the one `text/plain` part it always was.
+  `content_id` is normalised from the three spellings a model writes (`logo`,
+  `cid:logo`, `<logo>`). `tests/test_attachments_inline.py` pins the trees and
+  the id handling; the GreenMail e2e reads the delivered `multipart/related`
+  back off a real server.
 - `providers/soverin/contacts.py` **discovers** the address-book home rather than
   assuming a path. CardDAV standardises none, so `carddav_url` is a starting
   point: RFC 6764's `current-user-principal` → `addressbook-home-set` hops turn a

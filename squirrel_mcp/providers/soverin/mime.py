@@ -29,6 +29,7 @@ def build_email(
     in_reply_to: Optional[str] = None,
     references: Optional[List[str]] = None,
     attachments: Optional[List[OutgoingAttachment]] = None,
+    body_html: Optional[str] = None,
 ) -> EmailMessage:
     """Assemble an EmailMessage with a stable Message-ID.
 
@@ -47,6 +48,12 @@ def build_email(
     base64 (SMTP is 7-bit with a 998-octet line limit, so binary has no other
     way across), and encodes a non-ASCII filename per RFC 2231. Which is why
     this one function is the whole of it for both the SMTP and the IMAP path.
+
+    ``body_html`` is added as an *alternative*, never a replacement: ``body``
+    stays the text a plain-text client shows, and both halves are the same
+    message. It is also what makes an ``inline`` attachment mean anything --
+    see ``_add_parts``, which is where a part becomes an embedded image rather
+    than a second paperclip.
     """
     msg = EmailMessage()
     msg["From"] = from_addr
@@ -68,17 +75,61 @@ def build_email(
         # inside the 998-octet line limit for a long thread.
         msg["References"] = " ".join(references)
     msg.set_content(body or "")
-    for att in attachments or []:
+    if body_html:
+        msg.add_alternative(body_html, subtype="html")
+    _add_parts(msg, attachments or [], has_html=bool(body_html))
+    return msg
+
+
+def _add_parts(
+    msg: EmailMessage, attachments: List[OutgoingAttachment], *, has_html: bool
+) -> None:
+    """Hang the attachments off a message that already carries its body.
+
+    Where each part goes is what decides whether an inline image *shows*:
+
+    * an inline part belongs inside ``multipart/related`` next to the HTML that
+      refers to it, which is what ``add_related`` on the HTML part builds. A
+      client resolves ``cid:`` within the related group, so the same image
+      parked in the outer ``multipart/mixed`` alongside the ordinary
+      attachments renders in some clients and arrives as a second paperclip in
+      the rest;
+    * everything else is ``add_attachment``, which promotes the message to
+      ``multipart/mixed`` -- the ordinary paperclip.
+
+    Inline with no HTML body to refer to it is the case with nowhere good to
+    go, and it is the reason this stayed out of the first version: it becomes
+    an ordinary attachment, keeping its ``Content-ID`` so a client that wants
+    to show it still can. Degrading is the honest half of the promise -- an
+    image nothing points at is an attachment whatever the caller called it.
+    """
+    for att in attachments:
         maintype, _, subtype = (att.content_type or "").partition("/")
         # A part needs both halves of a type. Anything we cannot split is
         # treated as opaque bytes, which is what every client does with a type
         # it does not recognise anyway.
         if not maintype or not subtype:
             maintype, subtype = "application", "octet-stream"
+        cid = f"<{att.content_id}>" if att.content_id else None
+        if att.inline and has_html:
+            # The HTML is the last part of the alternative the body built.
+            msg.get_payload()[-1].add_related(
+                att.content,
+                maintype=maintype,
+                subtype=subtype,
+                cid=cid,
+                filename=att.filename,
+                disposition="inline",
+            )
+            continue
         msg.add_attachment(
-            att.content, maintype=maintype, subtype=subtype, filename=att.filename
+            att.content,
+            maintype=maintype,
+            subtype=subtype,
+            filename=att.filename,
+            cid=cid,
+            disposition="inline" if att.inline else "attachment",
         )
-    return msg
 
 
 def parse_references(raw: Optional[str]) -> List[str]:

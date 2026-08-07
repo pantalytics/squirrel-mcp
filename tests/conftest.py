@@ -124,19 +124,23 @@ class FakeMailProvider:
         reply_to_uid=None,
         reply_to_folder="INBOX",
         attachments=None,
+        body_html=None,
     ) -> str:
         self.drafts.append((to, subject, body, folder))
         self.draft_kwargs.append(
             {"cc": cc, "bcc": bcc, "reply_to_uid": reply_to_uid,
-             "reply_to_folder": reply_to_folder, "attachments": attachments}
+             "reply_to_folder": reply_to_folder, "attachments": attachments,
+             "body_html": body_html}
         )
         return "900"
 
     def update_draft(
-        self, folder, uid, to, subject, body, *, cc=None, bcc=None, attachments=None
+        self, folder, uid, to, subject, body, *, cc=None, bcc=None, attachments=None,
+        body_html=None,
     ) -> str:
         self.draft_kwargs.append(
-            {"cc": cc, "bcc": bcc, "attachments": attachments, "edit_of": uid}
+            {"cc": cc, "bcc": bcc, "attachments": attachments, "edit_of": uid,
+             "body_html": body_html}
         )
         return "901"
 
@@ -151,11 +155,13 @@ class FakeMailProvider:
         reply_to_uid=None,
         reply_to_folder="INBOX",
         attachments=None,
+        body_html=None,
     ) -> dict:
         self.sent.append((to, subject, body))
         self.send_kwargs.append(
             {"cc": cc, "bcc": bcc, "reply_to_uid": reply_to_uid,
-             "reply_to_folder": reply_to_folder, "attachments": attachments}
+             "reply_to_folder": reply_to_folder, "attachments": attachments,
+             "body_html": body_html}
         )
         return {
             "message_id": "<sent@example.com>",
