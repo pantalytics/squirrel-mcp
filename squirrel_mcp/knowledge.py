@@ -73,10 +73,18 @@ Contacts tools (`contacts_*`, CardDAV): contacts_list_addressbooks · contacts_s
 (all writes need confirm=true). Resolve the addressbook id via
 contacts_list_addressbooks first.
 
-Calendar tools (`calendar_*`, CalDAV): calendar_list_calendars · calendar_search_events
+Calendar tools (`calendar_*`): calendar_list_calendars · calendar_search_events
 (ISO date window, defaults to ~±6 months) · calendar_read_event · calendar_create_event
 / calendar_update_event / calendar_delete_event (all writes need confirm=true).
 Dates/times are ISO 8601 (YYYY-MM-DD for all-day, otherwise full datetime).
+- calendar_create_event takes `attendees` (email addresses), which turns the event
+  into a meeting and SENDS THEM AN INVITATION -- read the list back to the user
+  before confirming, the same way you would recipients of a mail.
+- `online_meeting=true` asks the calendar to add a conference link (a Teams meeting
+  on Outlook / Microsoft 365); it comes back as `join_url`, so pass it on.
+- Not every calendar can do either -- a plain CalDAV one can do neither, and says
+  so rather than creating the event without them. That is not a bug to work
+  around: offer the event without attendees, or another account.
 
 Good habits:
 - Resolve folder/addressbook/calendar ids with the matching list_* tool first.

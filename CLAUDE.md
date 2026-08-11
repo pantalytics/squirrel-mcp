@@ -75,6 +75,26 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   nearest ancestors. `tests/test_reply_threading.py` and
   `tests/test_imap_threading.py` pin the seams; the GreenMail e2e reads the
   delivered headers back off a real server.
+- **A meeting is not an appointment, and CalDAV only does the second.**
+  `calendar_create_event` takes `attendees` and `online_meeting`, and both are
+  gated on a capability the provider declares -- `supports_attendees` /
+  `supports_online_meeting`, read as `getattr(..., False)` so a backend written
+  before them answers no. This is the attachments rule (below) applied to the
+  calendar pillar, and it is the *reason* the flags exist rather than a
+  best-effort write: putting an `ATTENDEE` line in an iCalendar object does not
+  invite anybody. Delivering the invitation is server-side scheduling
+  (RFC 6638), which some CalDAV servers implement and others quietly do not,
+  and no client can tell which it is talking to -- so the CalDAV backend
+  answers False to both and names the part that will work instead. Microsoft
+  Graph, in the admin package, answers True: `isOnlineMeeting` +
+  `onlineMeetingProvider` mint a real Teams meeting, and Graph mails the
+  invitations itself. The link comes back as `join_url` on `EventDetail`, and
+  `calendar_create_event` re-reads the event to report it -- a meeting nobody
+  can join is half an answer, and a read-back that fails is logged rather than
+  raised, because the event *was* created and a failed tool call invites a
+  retry that books it twice. `attendees` accepts the shapes mail recipients
+  accept (`as_str_list`). `tests/test_calendar_invitations.py` pins the
+  refusals and the capable path.
 - **Sending an attachment is a MIME concern, not a protocol feature.** Neither
   SMTP nor IMAP knows what an attachment is -- both carry one opaque RFC 5322
   blob -- so the whole outgoing mechanism is `mime.build_email` handing files to

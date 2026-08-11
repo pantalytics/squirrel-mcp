@@ -193,12 +193,18 @@ class EventDetailOut(EventOut):
     organizer: Optional[str] = None
     attendees: List[str] = Field(default_factory=list)
     status: Optional[str] = None
+    join_url: Optional[str] = Field(
+        default=None, description="Link to join the online meeting, if the event has one"
+    )
 
 
 class EventWriteResult(BaseModel):
     uid: str
     calendar: str
     status: str
+    join_url: Optional[str] = Field(
+        default=None, description="Link to join the online meeting, when one was created"
+    )
 
 
 # ===================== Contacts (CardDAV) =====================
