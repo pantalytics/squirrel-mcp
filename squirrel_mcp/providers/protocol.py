@@ -342,6 +342,10 @@ class EventDetail:
     organizer: Optional[str]
     attendees: List[str]
     status: Optional[str]
+    # Where an attendee joins the online meeting, when the event has one. Only a
+    # backend that can mint such a link ever fills this; CalDAV leaves it None,
+    # which is why it carries a default -- an older backend needs no change.
+    join_url: Optional[str] = None
 
 
 @runtime_checkable
@@ -350,6 +354,36 @@ class CalendarProvider(Protocol):
 
     @property
     def is_authenticated(self) -> bool: ...
+
+    @property
+    def supports_attendees(self) -> bool:
+        """Whether naming attendees here actually *invites* them.
+
+        Read through ``getattr(provider, ..., False)``, so a backend written
+        before invitations existed answers False without being touched -- the
+        same default the mail pillar's ``supports_outgoing_attachments`` takes,
+        and for the same reason. Listing an ``ATTENDEE`` in an iCalendar object
+        is not the same as delivering an invitation: that needs server-side
+        scheduling (RFC 6638), which some CalDAV servers implement and others
+        silently do not, and nothing in the protocol lets a client tell which
+        it is talking to. A caller who believes they invited five people and
+        actually invited none is a worse outcome than a refusal, so a backend
+        claims this only when the invitation is the server's job and it knows
+        the server does it.
+        """
+        ...
+
+    @property
+    def supports_online_meeting(self) -> bool:
+        """Whether this backend can attach an online meeting to a new event.
+
+        True on a backend whose API mints the conference itself -- Microsoft
+        Graph returns a Teams meeting for ``isOnlineMeeting``. There is no
+        CalDAV equivalent: a plain calendar server stores whatever conferencing
+        details it is handed and creates none, so it answers False rather than
+        writing an event that looks like a meeting nobody can join.
+        """
+        ...
 
     def connect(self) -> None: ...
 
@@ -383,8 +417,17 @@ class CalendarProvider(Protocol):
         all_day: bool = False,
         location: Optional[str] = None,
         description: Optional[str] = None,
+        attendees: Optional[List[str]] = None,
+        online_meeting: bool = False,
     ) -> str:
-        """Create an event. Returns its uid."""
+        """Create an event. Returns its uid.
+
+        ``attendees`` (addresses) turns the event into a meeting and invites
+        them; ``online_meeting`` asks the backend to mint a conference link for
+        it. Both are gated by the capability properties above -- the tool layer
+        refuses before it gets here -- so an implementation may accept them and
+        raise if it declared the matching capability False.
+        """
         ...
 
     def update_event(

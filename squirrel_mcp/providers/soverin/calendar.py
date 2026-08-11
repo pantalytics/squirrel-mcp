@@ -69,6 +69,22 @@ class SoverinCalendarProvider:
     def is_authenticated(self) -> bool:
         return self._principal is not None
 
+    @property
+    def supports_attendees(self) -> bool:
+        """No. Writing ``ATTENDEE`` lines is not the same as inviting anyone.
+
+        Delivering the invitation is server-side scheduling (RFC 6638), which
+        some CalDAV servers do and others quietly do not -- and a client cannot
+        tell which one it is talking to. Claiming the capability would mean
+        reporting "invited" for an event nobody was told about.
+        """
+        return False
+
+    @property
+    def supports_online_meeting(self) -> bool:
+        """No. A CalDAV server stores conferencing details; it mints none."""
+        return False
+
     def connect(self) -> None:
         self._client = caldav.DAVClient(
             url=self._url,
@@ -182,7 +198,20 @@ class SoverinCalendarProvider:
         all_day: bool = False,
         location: Optional[str] = None,
         description: Optional[str] = None,
+        attendees: Optional[List[str]] = None,
+        online_meeting: bool = False,
     ) -> str:
+        # The tool layer refuses both of these against a backend that declares
+        # the capability False, so reaching here means someone drove the
+        # provider directly. Say no rather than create a stripped-down event
+        # and let the caller believe the invitation went out.
+        if attendees:
+            raise ProviderError(
+                "This CalDAV backend cannot send invitations; create the event "
+                "without attendees."
+            )
+        if online_meeting:
+            raise ProviderError("This CalDAV backend cannot create online meetings.")
         cal = self._calendar_by_id(calendar)
         uid = str(uuid.uuid4())
         ical = ICalendar()
