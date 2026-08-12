@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 from ...config import SquirrelConfig
+from ...search_query import MailQuery
 from ..protocol import (
     AttachmentPayload,
     FolderInfo,
@@ -85,6 +86,7 @@ class SoverinMailProvider:
         since: Optional[str] = None,
         limit: int = 25,
         offset: int = 0,
+        parsed: Optional[MailQuery] = None,
     ) -> Tuple[List[MessageSummary], int]:
         return self._imap.search(
             folder,
@@ -94,6 +96,7 @@ class SoverinMailProvider:
             since=since,
             limit=limit,
             offset=offset,
+            parsed=parsed,
         )
 
     def fetch_message(self, folder: str, uid: str) -> MessageDetail:

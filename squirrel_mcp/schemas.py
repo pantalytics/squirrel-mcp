@@ -51,6 +51,28 @@ class SearchResult(BaseModel):
     limit: int = Field(description="Max messages returned per page")
     offset: int = Field(description="Messages skipped")
     folder: str
+    matched: str = Field(
+        default="all",
+        description=(
+            "How the query was matched. 'all' = every term was required and "
+            "found. 'partial' = nothing matched all of them, so the least "
+            "distinctive terms were dropped and these results match the rest -- "
+            "see dropped_terms and say so when reporting them. 'none' = nothing "
+            "matched even then."
+        ),
+    )
+    searched_terms: List[str] = Field(
+        default_factory=list,
+        description="The terms the query was understood as, after parsing",
+    )
+    dropped_terms: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Terms given up to get any results at all. Non-empty means these "
+            "messages do NOT contain them -- tell the user which words were "
+            "ignored rather than presenting the hits as exact."
+        ),
+    )
 
 
 class AttachmentMeta(BaseModel):

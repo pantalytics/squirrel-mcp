@@ -444,3 +444,64 @@ def test_an_inline_image_arrives_related_to_the_html_that_shows_it(provider):
         assert "Plain text version." in (delivered[-1].text or "")
     finally:
         mb.logout()
+
+
+def test_a_name_with_awkward_spacing_is_found_by_its_words(provider):
+    """The reported bug, against a real IMAP server.
+
+    A signature reaches the mailbox as ``Iris  van 't Klooster`` -- two spaces,
+    an apostrophe -- and the query is typed the way a person says it. The old
+    behaviour sent that whole string as one ``TEXT`` key, which is a substring
+    of the raw message and is simply not there. Each word as its own key is.
+    """
+    p, cfg = provider
+    marker = uuid.uuid4().hex[:8]
+    subject = f"E2E spacing {marker}"
+    _seed_message(
+        cfg.smtp_host,
+        cfg.smtp_port,
+        subject,
+        f"Super!\r\nIris  van 't Klooster {marker}\r\nOperations manager\r\n",
+    )
+
+    found, _ = p.search("INBOX", f"Iris van 't Klooster {marker}", limit=50)
+    assert _find_by_subject(found, subject) is not None
+
+    # Out of order, and in the wrong case.
+    reordered, _ = p.search("INBOX", f"{marker} KLOOSTER iris", limit=50)
+    assert _find_by_subject(reordered, subject) is not None
+
+    # What is deliberately NOT asserted here: that quoting the same string
+    # fails. Whether a literal matches this body is the server's own business
+    # -- RFC 3501 lets it match TEXT however it likes, and they differ -- so
+    # pinning it would pin GreenMail rather than Squirrel. That the query
+    # leaves as one key per word is pinned where it is decided, in
+    # tests/test_mail_search.py.
+
+
+def test_a_scoped_term_asks_the_server_about_that_header_only(provider):
+    p, cfg = provider
+    marker = uuid.uuid4().hex[:8]
+    subject = f"E2E scoped {marker}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, f"body mentions {marker}")
+
+    by_sender, _ = p.search("INBOX", f"from:sender@external.test {marker}", limit=50)
+    assert _find_by_subject(by_sender, subject) is not None
+
+    # The marker is in the body, not the From header, so scoping it there finds
+    # nothing -- which is the whole point of being able to scope.
+    wrong_field, _ = p.search("INBOX", f"from:{marker}", limit=50)
+    assert _find_by_subject(wrong_field, subject) is None
+
+
+def test_an_excluded_word_removes_the_message(provider):
+    p, cfg = provider
+    marker = uuid.uuid4().hex[:8]
+    subject = f"E2E exclude {marker}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, f"{marker} unsubscribe here")
+
+    kept, _ = p.search("INBOX", marker, limit=50)
+    assert _find_by_subject(kept, subject) is not None
+
+    excluded, _ = p.search("INBOX", f"{marker} -unsubscribe", limit=50)
+    assert _find_by_subject(excluded, subject) is None

@@ -20,6 +20,18 @@ Mail tools (all prefixed `mail_`):
   mailbox can be large, so never try to pull everything at once. `unseen_only`
   and `flagged_only` narrow it server-side -- use `flagged_only=true` to answer
   "what have I flagged", rather than paging the folder and sifting yourself.
+  The `query` takes the syntax any mail client takes: bare words must ALL
+  appear, in any order (`iris klooster`), `from:`/`to:`/`cc:`/`subject:`/`body:`
+  scope a word to one field, `"..."` demands a phrase, `-word` excludes, `OR`
+  offers a choice, `has:attachment` narrows to messages carrying a file.
+  Case, accents and apostrophes are ignored. Two habits worth having: search
+  for the distinctive WORDS of a name rather than quoting the whole thing --
+  a phrase has to survive the exact spacing and punctuation the sender used,
+  and separate words do not -- and use `from:` when you want mail FROM someone
+  rather than every mail mentioning them. If nothing matches everything asked
+  for, the search widens rather than coming back empty: `matched` says
+  "partial" and `dropped_terms` says which words were given up, so say so
+  instead of reporting the hits as exact.
 - mail_read: read one message by uid. Large bodies are truncated -- the response
   tells you the total length and how to page the rest.
 - mail_read_chunk: fetch the next slice of a large body (offset + length).
