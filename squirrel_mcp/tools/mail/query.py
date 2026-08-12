@@ -26,20 +26,23 @@ MAX_WIDENING_STEPS = 4
 
 
 def _takes_parsed(search: Callable) -> bool:
-    """Whether this provider's ``search`` accepts the parsed query.
+    """Whether this provider's ``search`` reads the parsed query.
 
     Asked of the signature rather than of a capability property, because a
     provider written before ``parsed`` existed cannot declare anything and
     should not have to: the raw ``query`` is still authoritative and it will
     answer with it.
+
+    The parameter has to be named. A ``**kwargs`` would *accept* it without
+    raising and then ignore it, which is the one case that must not read as
+    yes: the widening ladder weakens ``parsed`` while ``raw`` stays what the
+    caller typed, so a backend going by ``raw`` alone would be asked the
+    identical question once per rung.
     """
     try:
-        params = inspect.signature(search).parameters
+        return "parsed" in inspect.signature(search).parameters
     except (TypeError, ValueError):  # builtins, C callables, exotic mocks
         return False
-    return "parsed" in params or any(
-        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
-    )
 
 
 class QueryToolsMixin:
@@ -170,7 +173,13 @@ class QueryToolsMixin:
             # Only widen for a query that actually asked for something and came
             # back with nothing. A later page being empty is the end of the
             # results, not a failed match, so paging never re-runs the ladder.
-            if parsed and not messages and eff_offset == 0:
+            #
+            # And only against a backend that reads the parsed query: widening
+            # weakens `parsed` while `raw` stays what the caller typed, so a
+            # backend going by `raw` alone would be asked the identical
+            # question several times over and answer nothing several times.
+            can_widen = _takes_parsed(provider.search)
+            if parsed and not messages and eff_offset == 0 and can_widen:
                 for step, (candidate, given_up) in enumerate(widen(parsed)):
                     if step >= MAX_WIDENING_STEPS:
                         break

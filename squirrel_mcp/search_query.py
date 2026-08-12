@@ -222,6 +222,14 @@ class Clause:
 
     @property
     def negated(self) -> bool:
+        """True when the whole clause is an exclusion.
+
+        ``-a OR -b`` reads as "neither a nor b", which is what both compilers
+        emit (``NOT (a OR b)``) and what ``verify`` checks. It is not the
+        literal De Morgan reading of the operators, and it is the useful one:
+        somebody writing that means "keep both of these out", not "keep out
+        only what has both".
+        """
         return all(t.negated for t in self.terms)
 
     @property
@@ -485,7 +493,11 @@ def _clause_refutes(clause: Clause, summary) -> bool:
         # cc). An OR clause is satisfiable by that part, so it proves nothing.
         return False
     if clause.negated:
-        # Every term is a "must not", and they were ANDed by the parser: the
-        # message fails only if one of them is actually present.
+        # "Neither of these" (see Clause.negated): present at all, and it fails.
         return any(_term_hits(t, summary) for t in clause.terms)
-    return not any(_term_hits(t, summary) for t in clause.terms)
+    # A mixed clause -- ``a OR -b`` -- is satisfied by either half, so it is
+    # refuted only when neither half holds.
+    return not any(
+        (not _term_hits(t, summary)) if t.negated else _term_hits(t, summary)
+        for t in clause.terms
+    )

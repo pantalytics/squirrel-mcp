@@ -431,11 +431,19 @@ class SoverinImapClient:
         """
         keys: list = []
         for clause in parsed.clauses:
-            alternatives = [AND(**cls._term_key(t)) for t in clause.terms]
+            if clause.negated:
+                # "Neither of these": one NOT around the alternatives, rather
+                # than one per term, so the clause excludes all of them.
+                inner = [AND(**cls._term_key(t)) for t in clause.terms]
+                keys.append(NOT(inner[0] if len(inner) == 1 else OR(*inner)))
+                continue
+            alternatives = [
+                NOT(AND(**cls._term_key(t))) if t.negated else AND(**cls._term_key(t))
+                for t in clause.terms
+            ]
             # imap-tools' OR takes two or more keys and nests; a clause of one
             # is just the key itself.
-            key = alternatives[0] if len(alternatives) == 1 else OR(*alternatives)
-            keys.append(NOT(key) if clause.negated else key)
+            keys.append(alternatives[0] if len(alternatives) == 1 else OR(*alternatives))
         return keys
 
     @classmethod

@@ -193,3 +193,22 @@ def test_widening_never_gives_up_an_exclusion():
 
 def test_the_ladder_is_finite():
     assert len(list(widen(parse('"one two" three four five')))) < 12
+
+
+def test_a_mixed_or_clause_is_satisfied_by_either_half():
+    """``invoice OR -newsletter``: the negated half is what keeps a message
+    with neither word, so the clause refutes nothing on its own."""
+    plain = _summary(subject="Weekly digest")
+    named = _summary(subject="Invoice 42")
+    letter = _summary(subject="Weekly newsletter")
+    kept = verify(parse("subject:invoice OR -subject:newsletter"), [plain, named, letter])
+    assert kept == [plain, named]
+
+
+def test_excluding_two_words_at_once_excludes_both():
+    """``-a OR -b`` reads as "neither", which is what both compilers emit."""
+    clean = _summary(subject="Invoice 42")
+    one = _summary(subject="Invoice newsletter")
+    other = _summary(subject="Invoice digest")
+    q = parse("-subject:newsletter OR -subject:digest")
+    assert verify(q, [clean, one, other]) == [clean]

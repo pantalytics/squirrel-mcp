@@ -227,3 +227,20 @@ async def test_a_provider_that_never_heard_of_parsed_still_works(fake_provider):
     old signature, and offering it the argument must not be what breaks it."""
     out = await _search(_app(fake_provider), query="anything at all")
     assert out["messages"]
+
+
+@pytest.mark.anyio
+async def test_an_old_provider_is_not_asked_the_same_question_five_times():
+    """Widening weakens `parsed` while `raw` stays what the caller typed, so a
+    backend that reads only `raw` would be asked the identical question once
+    per rung and answer nothing every time."""
+
+    class OldProvider(RecordingProvider):
+        def search(self, folder, query=None, **kw):  # no `parsed`
+            self.calls.append([query or ""])
+            return [], 0
+
+    provider = OldProvider([])
+    out = await _search(_app(provider), query="Klooster invoice quarterly")
+    assert out["messages"] == []
+    assert len(provider.calls) == 1
