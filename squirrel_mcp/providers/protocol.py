@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, Protocol, Tuple, runtime_checkable
 
+from ..search_query import MailQuery
+
 
 # --------------------------------------------------------------------------- #
 # Errors raised by provider implementations. The tool layer catches these and
@@ -194,6 +196,7 @@ class MailProvider(Protocol):
         since: Optional[str] = None,
         limit: int = 25,
         offset: int = 0,
+        parsed: Optional["MailQuery"] = None,
     ) -> Tuple[List[MessageSummary], int]:
         """Search a folder. Returns (page of summaries, total matching count).
 
@@ -201,6 +204,26 @@ class MailProvider(Protocol):
         ``flagged_only`` narrows to messages carrying ``\\Flagged`` (see
         ``flag``). ``since`` is an ISO date (YYYY-MM-DD) lower bound. Newest
         first.
+
+        ``parsed`` is that same ``query`` already run through
+        ``search_query.parse`` -- the terms, the field scopes, the negations and
+        the quoted phrases, in the one grammar every backend compiles. Honour it
+        when it is given: it is what stops each backend inventing its own
+        meaning for a multi-word query, which is what ``TEXT "Iris van 't
+        Klooster"`` did on IMAP and ``$search`` did on Graph.
+
+        Two rules go with it, and the tool layer depends on both:
+
+        * **Compile it at least as broadly as it reads.** A term that cannot be
+          sent faithfully -- an accent an IMAP server will not fold, a phrase a
+          keyword index cannot keep together -- is widened, never narrowed. The
+          tool layer re-checks every field a summary can prove and takes the
+          breadth back; a match dropped down here is gone for good.
+        * **It is an addition, not a replacement.** ``query`` stays
+          authoritative, so a backend written before this argument existed (or
+          one that would rather use its own engine) keeps working by ignoring
+          it, and one that wants the structure without being handed it can call
+          ``parse(query)`` itself.
         """
         ...
 

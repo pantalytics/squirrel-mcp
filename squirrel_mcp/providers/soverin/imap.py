@@ -16,6 +16,8 @@ from typing import Callable, List, Optional, Tuple, TypeVar
 
 from imap_tools import (
     AND,
+    NOT,
+    OR,
     BaseMailBox,
     MailBox,
     MailBoxStartTls,
@@ -26,6 +28,7 @@ from imap_tools.errors import MailboxFlagError, MailboxLoginError
 from imap_tools.utils import check_command_status, clean_uids
 
 from ...logging_config import get_logger
+from ...search_query import MailQuery, parse
 from ..protocol import (
     AttachmentInfo,
     AttachmentPayload,
@@ -157,8 +160,9 @@ class SoverinImapClient:
         since: Optional[str] = None,
         limit: int = 25,
         offset: int = 0,
+        parsed: Optional[MailQuery] = None,
     ) -> Tuple[List[MessageSummary], int]:
-        criteria = self._build_criteria(query, unseen_only, flagged_only, since)
+        criteria = self._build_criteria(query, unseen_only, flagged_only, since, parsed)
         charset = "UTF-8" if query else "US-ASCII"
 
         def op(mb: BaseMailBox) -> Tuple[List[MessageSummary], int]:
@@ -395,12 +399,66 @@ class SoverinImapClient:
             raise MailNotFoundError(f"Folder {folder!r} not found: {exc}") from exc
 
     @staticmethod
+    def _term_key(term) -> dict:
+        """One parsed term as the imap-tools kwarg for its IMAP search key.
+
+        ``from:``/``to:``/``cc:``/``subject:`` are real IMAP keys, so a scoped
+        term is answered by the server against that header alone instead of by
+        us against a page of it. ``body:`` is BODY (the body without the
+        headers) and the unscoped default is TEXT (both).
+        """
+        return {
+            "from": {"from_": term.wire},
+            "to": {"to": term.wire},
+            "cc": {"cc": term.wire},
+            "subject": {"subject": term.wire},
+            "body": {"body": term.wire},
+        }.get(term.field, {"text": term.wire})
+
+    @classmethod
+    def _query_criteria(cls, parsed: MailQuery) -> list:
+        """Compile a parsed query into IMAP keys -- one key per term, ANDed.
+
+        This is the fix for the literal phrase. IMAP ANDs the keys of a search
+        by definition, and each key is matched independently, so ``iris`` and
+        ``klooster`` as two TEXT keys find a signature reading ``Iris  van 't
+        Klooster`` that no single ``TEXT "Iris van 't Klooster"`` ever will --
+        the words need not be adjacent, in order, or on the same folded header
+        line.
+
+        A quoted phrase stays one key: the caller asked for those words
+        together, and the server's literal is the closest IMAP has to that.
+        """
+        keys: list = []
+        for clause in parsed.clauses:
+            alternatives = [AND(**cls._term_key(t)) for t in clause.terms]
+            # imap-tools' OR takes two or more keys and nests; a clause of one
+            # is just the key itself.
+            key = alternatives[0] if len(alternatives) == 1 else OR(*alternatives)
+            keys.append(NOT(key) if clause.negated else key)
+        return keys
+
+    @classmethod
     def _build_criteria(
-        query: Optional[str], unseen_only: bool, flagged_only: bool, since: Optional[str]
+        cls,
+        query: Optional[str],
+        unseen_only: bool,
+        flagged_only: bool,
+        since: Optional[str],
+        parsed: Optional[MailQuery] = None,
     ):
         kwargs: dict = {}
+        positional: list = []
         if query:
-            kwargs["text"] = query
+            # A provider is allowed to be handed the raw string on its own (the
+            # protocol keeps ``query`` authoritative), so parse it here rather
+            # than falling back to the literal this module used to send.
+            positional = cls._query_criteria(parsed or parse(query))
+            if not positional:
+                # Nothing survived tokenizing -- a query of pure punctuation.
+                # Search for it as written instead of silently listing the
+                # folder.
+                kwargs["text"] = query
         if unseen_only:
             kwargs["seen"] = False
         if flagged_only:
@@ -415,7 +473,9 @@ class SoverinImapClient:
                 raise MailProviderError(
                     f"'since' must be an ISO date (YYYY-MM-DD), got {since!r}"
                 ) from exc
-        return AND(**kwargs) if kwargs else "ALL"
+        if positional or kwargs:
+            return AND(*positional, **kwargs)
+        return "ALL"
 
     @staticmethod
     def _from_display(msg) -> str:

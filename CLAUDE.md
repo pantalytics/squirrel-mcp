@@ -57,6 +57,38 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   Flagging is advertised as non-destructive, so it does not get to delete
   anything. `tests/test_imap_flag.py` pins the command shape and the absent
   expunge; the GreenMail e2e proves both against a real server.
+- **A search query is parsed once, here, not interpreted by each backend.**
+  `search_query.py` owns the grammar (`from:`/`to:`/`cc:`/`subject:`/`body:`,
+  `"phrases"`, `-exclusions`, `OR`, `has:attachment`) and both backends compile
+  the same `MailQuery` -- IMAP into its search keys, the admin package's Graph
+  provider into KQL. It replaced handing the raw string to whoever was
+  answering, which failed twice over. **A literal is the wrong default**: IMAP's
+  `TEXT` is a substring of the raw message, so a contact's name missed a
+  signature reading `Iris  van 't Klooster` over the second space -- and would
+  equally have missed a header fold, a curly apostrophe or `Klooster, Iris`.
+  Unquoted words now AND as separate keys, which none of those defeat, and a
+  phrase is what you get by quoting. **And the fallback was undefined**: RFC
+  3501 explicitly lets a server "implement flexible matching" for `TEXT`, so
+  one host word-matched and ignored order while the next did strict substring
+  and Graph ran keywords -- the same tool meaning three things, which is the
+  divergence the attachment and meeting seams are held against.
+  Three rules make the backends agree. The compiled query is always **at least
+  as broad** as what was asked (`José` leaves as `Jos`, since no server will
+  fold accents for us and sending one spelling misses the other). Anything a
+  `MessageSummary` can prove -- sender, recipients, subject, attachment flag --
+  is then **verified exactly** here, taking that breadth back; anything it
+  cannot (the body, cc) stays the server's word, because a 200-character
+  preview refutes nothing. And when a query matches nothing the tool **widens
+  and says so**: `widen()` gives up one term at a time, least distinctive
+  first, and `matched`/`dropped_terms` carry which. That ladder tries *each*
+  term in turn rather than guessing once, because the absent word is usually
+  the rarest one, so a single "drop the weakest" keeps the word that is missing
+  and stays empty. ORing the terms together is deliberately not on it: it
+  always "works" and never informs. `parsed` is an **additive** keyword on
+  `MailProvider.search` offered via signature inspection, so a backend written
+  before it keeps its raw `query`. `tests/test_search_query.py` pins the
+  grammar and the ladder, `tests/test_mail_search.py` the IMAP keys and the
+  widening policy, and the GreenMail e2e proves a real server answers them.
 - **Replying is a provider concern, not a header the tool layer writes.**
   `mail_send` / `mail_draft` take a `reply_to_uid` (+ `reply_to_folder`) and
   hand it to the provider untouched, because *how* you join a thread is the
@@ -235,4 +267,5 @@ defaults -- a missing one is a config error, never a guess.
 | `knowledge.py` | Server instructions handed to the MCP client |
 | `error_handling.py` / `error_sanitizer.py` | Error hierarchy + message sanitizing |
 | `logging_config.py` | Structured logging to stderr |
+| `search_query.py` | Search grammar: parse, fold, verify, widen (both backends) |
 | `usage.py` | Usage-tracking stub (full version in admin package) |

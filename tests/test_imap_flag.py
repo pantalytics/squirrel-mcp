@@ -99,7 +99,9 @@ def test_flagged_only_narrows_the_search_criteria(client):
     assert build(None, False, True, None) == "(FLAGGED)"
     assert build(None, False, False, None) == "ALL"
     assert "UNFLAGGED" not in str(build("invoice", True, False, "2026-07-01"))
-    assert build("invoice", True, True, None) == '(FLAGGED UNSEEN TEXT "invoice")'
+    # The query's keys lead now that it compiles to one per term rather than to
+    # a single literal; the flag keys are what this test is about.
+    assert build("invoice", True, True, None) == '((TEXT "invoice") FLAGGED UNSEEN)'
 
 
 def test_a_rejected_store_becomes_a_provider_error(client, monkeypatch):
