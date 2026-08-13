@@ -92,6 +92,31 @@ async def test_send_with_confirm_sends(app_with_tools, fake_provider):
     assert "me@example.com" in str(result)
 
 
+async def test_send_reports_the_copy_in_sent(app_with_tools, fake_provider):
+    """A send that cannot be found in Sent afterwards reads as a send that
+    never happened, so the result says where the copy went."""
+    result = await app_with_tools.call_tool(
+        "mail_send",
+        {"to": "x@y.com", "subject": "hi", "body": "yo", "confirm": True},
+    )
+    text = str(result)
+    assert "saved_to_sent" in text and "True" in text
+    assert "Sent" in text
+
+
+async def test_a_failed_sent_copy_is_reported_not_raised(app_with_tools, fake_provider):
+    """The message left. Failing the tool call would invite a second one."""
+    fake_provider.sent_copy_ok = False
+    result = await app_with_tools.call_tool(
+        "mail_send",
+        {"to": "x@y.com", "subject": "hi", "body": "yo", "confirm": True},
+    )
+    assert len(fake_provider.sent) == 1
+    structured = result[1] if isinstance(result, tuple) else result
+    assert structured["saved_to_sent"] is False
+    assert structured["status"] == "Sent"
+
+
 async def test_list_accounts_names_the_configured_account(app_with_tools):
     """Standalone there is exactly one account, and it is the default."""
     result = await app_with_tools.call_tool("mail_list_accounts", {})

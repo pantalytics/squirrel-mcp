@@ -299,7 +299,23 @@ class MailProvider(Protocol):
         attachments: Optional[List[OutgoingAttachment]] = None,
         body_html: Optional[str] = None,
     ) -> dict:
-        """Send a message. Returns {'message_id': ..., 'recipients': [...]}.
+        """Send a message. Returns {'message_id', 'recipients', 'saved_to_sent', 'sent_folder'}.
+
+        **Sending is only half of it: the copy in Sent is the other half.** A
+        transport delivers a message to its recipients and nothing more, so
+        unless the backend's server files a copy itself, the sender's own
+        record of it does not exist -- the mail went out and ``mail_search``
+        on Sent finds nothing, which is what a user reads as "it wasn't sent".
+        Filing that copy is therefore part of this method's contract, and each
+        backend does it the way its transport does: IMAP/SMTP APPENDs the sent
+        bytes to the ``\\Sent`` folder itself, while Graph's ``/send`` puts the
+        message in Sent Items server-side and the backend simply reports it.
+
+        ``saved_to_sent`` says whether the copy is there (None from a backend
+        old enough not to answer), and ``sent_folder`` names where. **False is
+        not a failed send** -- the message left -- so an implementation reports
+        it rather than raising: raising would invite a retry that delivers the
+        message twice.
 
         ``reply_to_uid`` (a uid in ``reply_to_folder``) makes this a reply
         *inside* that message's thread. How is the backend's business: an

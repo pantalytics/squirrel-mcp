@@ -162,6 +162,20 @@ class SendResult(BaseModel):
         default_factory=list,
         description="Filenames that went out with the message -- repeat them back",
     )
+    saved_to_sent: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Whether a copy of the message was filed in the account's Sent "
+            "folder. False means the message DID go out but the copy failed, "
+            "so it will not be in Sent -- say so; the send itself still "
+            "succeeded and must not be repeated. Null from a backend that "
+            "does not report it."
+        ),
+    )
+    sent_folder: Optional[str] = Field(
+        default=None,
+        description="Folder the copy was filed in (pass it to mail_search to find it)",
+    )
 
 
 class MoveResult(BaseModel):

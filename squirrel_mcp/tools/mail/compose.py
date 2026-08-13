@@ -290,6 +290,11 @@ class ComposeToolsMixin:
             with a ``"content_id"``, then refer to it from the HTML as
             ``<img src="cid:that-id">``. Without an HTML body pointing at it,
             an inline file simply arrives as an ordinary attachment.
+
+            THE COPY IN SENT: ``saved_to_sent`` says whether the message was
+            also filed in the account's Sent folder (``sent_folder`` names it).
+            False means it went out but the copy failed -- tell the user it was
+            sent and that they will not find it in Sent, and do NOT send again.
             """
             provider, sub = await self._get_provider(account, writes=True)
             if body is None:
@@ -339,4 +344,10 @@ class ComposeToolsMixin:
                 subject=subject,
                 in_reply_to=in_reply_to,
                 attachments=[a.filename for a in files],
+                # Whether the copy landed in Sent is the backend's to report --
+                # it is the only thing that knows whether its transport files
+                # one itself. A reply travels this same path, so it is filed
+                # exactly like any other message.
+                saved_to_sent=result.get("saved_to_sent"),
+                sent_folder=result.get("sent_folder"),
             )
