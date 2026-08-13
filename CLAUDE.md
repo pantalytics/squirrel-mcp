@@ -107,6 +107,36 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   nearest ancestors. `tests/test_reply_threading.py` and
   `tests/test_imap_threading.py` pin the seams; the GreenMail e2e reads the
   delivered headers back off a real server.
+- **Sending is delivery; the copy in Sent is a second job, and nobody else
+  does it.** SMTP hands a message to the recipient's server and keeps nothing,
+  and most IMAP hosts (Soverin included) file no copy of their own -- so a mail
+  sent through Squirrel used to be genuinely gone: delivered, and absent from
+  the sender's own Sent folder, which is where `mail_search` and every mail
+  client look. A send you cannot find afterwards reads as a send that never
+  happened. So `provider.send` now finishes the job: `smtp.send` hands back the
+  **exact RFC822 bytes** it delivered plus the moment it did, and `provider.py`
+  -- the one place that sees both halves, exactly as with threading -- APPENDs
+  them to the Sent folder `\Seen`, with the send time as INTERNALDATE so the
+  copy sorts where it belongs. Rebuilding the message instead would mint a
+  fresh Message-ID and Date, and the copy would no longer be the mail the
+  recipient got. Four decisions hold it up. **The folder is read, not
+  guessed**: the `\Sent` SPECIAL-USE attribute (RFC 6154) off the same LIST
+  `mail_list_folders` already returns, because the name is localized
+  ("Verzonden items"), sometimes under INBOX, and "Sent Items"/"Sent Messages"
+  are both common -- `Sent` is only the fallback when a server advertises
+  nothing. **A failed APPEND does not fail the send**: the message is with the
+  recipient by then, so raising would report a delivered mail as undelivered
+  and invite a retry that sends it twice -- the outcome rides back in
+  `saved_to_sent` / `sent_folder` on `SendResult` instead, and the tool tells
+  the user. **The Bcc header stays on the copy** and only comes off what
+  leaves: your own Sent folder is the only record of whom you blind-copied.
+  **And a host that files its own copy gets one, not two** -- the Message-ID is
+  searched for in the folder before the APPEND, which is also why the Graph
+  backend simply reports `saved_to_sent=True`: `/send` files Sent Items
+  server-side and an API backend has no APPEND to duplicate it with.
+  `tests/test_sent_copy.py` pins the discovery, the flags, the deduplication
+  and the never-fatal rule; the GreenMail e2e sends for real and reads the copy
+  back out of Sent.
 - **A meeting is not an appointment, and CalDAV only does the second.**
   `calendar_create_event` takes `attendees` and `online_meeting`, and both are
   gated on a capability the provider declares -- `supports_attendees` /

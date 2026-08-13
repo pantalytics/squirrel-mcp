@@ -63,7 +63,7 @@ def _seed_message(
 
 @pytest.fixture
 def provider(greenmail):
-    _ensure_folders(greenmail.imap_host, greenmail.imap_port, "Drafts", "Archive")
+    _ensure_folders(greenmail.imap_host, greenmail.imap_port, "Drafts", "Archive", "Sent")
     p = create_mail_provider(greenmail)
     p.connect()
     yield p, greenmail
@@ -214,6 +214,48 @@ def test_send_delivers_to_self(provider):
 
     inbox, _ = p.search("INBOX", limit=50)
     assert _find_by_subject(inbox, subject) is not None
+
+
+def test_send_files_a_copy_in_sent(provider):
+    """Delivery and the sender's own record are two different things.
+
+    Only a real server proves this one: the APPEND has to be accepted, the
+    copy has to come back out of a SEARCH of that folder, and it has to carry
+    the flag that keeps it out of the unread count. GreenMail advertises no
+    SPECIAL-USE attributes, so this also exercises the ``Sent`` fallback.
+    """
+    p, _ = provider
+    subject = f"E2E sent copy {uuid.uuid4().hex[:8]}"
+
+    result = p.send([TEST_EMAIL], subject, "This one should be in Sent afterwards.")
+    assert result["saved_to_sent"] is True
+
+    sent, _total = p.search(result["sent_folder"], limit=50)
+    copy = _find_by_subject(sent, subject)
+    assert copy is not None, f"the message is not in {result['sent_folder']}"
+    assert "\\Seen" in copy.flags  # mail you wrote yourself is not unread
+
+
+def test_a_reply_is_filed_in_sent_with_its_thread(provider):
+    """A reply goes through the same door, so it lands in Sent as a reply --
+    headers and all, which is what a mail client threads the copy on."""
+    p, cfg = provider
+    subject = f"E2E sent reply {uuid.uuid4().hex[:8]}"
+    parent_id = f"<{uuid.uuid4().hex}@external.test>"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, "Original.", message_id=parent_id)
+
+    inbox, _ = p.search("INBOX", limit=50)
+    original = _find_by_subject(inbox, subject)
+    assert original is not None
+
+    reply_subject = f"Re: {subject}"
+    result = p.send([TEST_EMAIL], reply_subject, "Answering.", reply_to_uid=original.uid)
+    assert result["saved_to_sent"] is True
+
+    sent, _total = p.search(result["sent_folder"], limit=50)
+    copy = _find_by_subject(sent, reply_subject)
+    assert copy is not None
+    assert p.fetch_message(result["sent_folder"], copy.uid).message_id == result["message_id"]
 
 
 def test_reply_lands_in_the_thread(provider):

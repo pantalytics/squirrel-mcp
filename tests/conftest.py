@@ -35,6 +35,9 @@ class FakeMailProvider:
         # Flipped off by a test to stand in for a backend that cannot send
         # files, which is what every backend answers by default.
         self.attachments_supported = True
+        # Flipped off to stand in for a send whose copy could not be filed --
+        # the message still went out, which is the whole point of the field.
+        self.sent_copy_ok = True
         self._email = "me@example.com"
 
     @property
@@ -166,6 +169,8 @@ class FakeMailProvider:
         return {
             "message_id": "<sent@example.com>",
             "recipients": list(to) + list(cc or []),
+            "saved_to_sent": self.sent_copy_ok,
+            "sent_folder": "Sent" if self.sent_copy_ok else None,
         }
 
     def move(self, folder, uids, destination) -> int:

@@ -51,6 +51,19 @@ _CONNECTION_ERRORS = (imaplib.IMAP4.abort, OSError, ConnectionError, EOFError)
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
+# The SPECIAL-USE attribute (RFC 6154) a server puts on the folder it means as
+# "Sent". Asking for it is the whole reason not to hardcode a name: the folder
+# is "Sent Messages" on one host, "Verzonden items" on a Dutch Exchange and
+# "INBOX.Sent" wherever INBOX is the namespace root, and every one of those
+# answers to this one flag.
+SENT_SPECIAL_USE = "\\sent"
+
+# What to append to when the server advertises no \Sent anywhere. "Sent" is the
+# overwhelmingly common name and the one IMAP clients have defaulted to for
+# decades -- and if it is wrong the append fails loudly into the send result
+# rather than silently filing the copy somewhere nobody looks.
+DEFAULT_SENT_FOLDER = "Sent"
+
 
 def _html_to_text(html: str) -> str:
     """Very small HTML -> text fallback for messages with no text/plain part."""
@@ -82,6 +95,10 @@ class SoverinImapClient:
         self._security = security
         self._tls_verify = tls_verify
         self._mailbox: Optional[BaseMailBox] = None
+        # Resolved from LIST on first use and kept: a folder's special-use
+        # attribute does not change under a running session, and a send should
+        # not pay for a full folder listing every time.
+        self._sent_folder: Optional[str] = None
 
     def _ssl_context(self) -> ssl.SSLContext:
         ctx = ssl.create_default_context()
@@ -348,6 +365,76 @@ class SoverinImapClient:
             self._select(mb, target)
             found = list(mb.uids(f'HEADER Message-ID "{message_id}"'))
             return found[-1] if found else ""
+
+        return self._run(op)
+
+    # ---- the copy in Sent -------------------------------------------------- #
+    def sent_folder(self) -> str:
+        """The folder this account keeps sent mail in.
+
+        Read from the ``\\Sent`` SPECIAL-USE attribute in the LIST reply (RFC
+        6154) -- the same flags ``list_folders`` already hands the tool layer
+        -- because the *name* is not something a client gets to know: it is
+        localized, it sits under INBOX on some servers, and "Sent Items" and
+        "Sent Messages" are both common. A server that advertises no such
+        folder falls back to ``Sent``.
+        """
+        if self._sent_folder is not None:
+            return self._sent_folder
+        try:
+            folders = self.list_folders()
+        except Exception as exc:  # noqa: BLE001 - a listing failure is not fatal
+            # Don't cache this: the next send should look again rather than be
+            # stuck with the fallback for the life of the session.
+            logger.warning("Could not list folders to find Sent (%s); assuming %s",
+                           exc, DEFAULT_SENT_FOLDER)
+            return DEFAULT_SENT_FOLDER
+        name = DEFAULT_SENT_FOLDER
+        for folder in folders:
+            if any(f.lower() == SENT_SPECIAL_USE for f in folder.flags):
+                name = folder.name
+                break
+        else:
+            logger.info("No \\Sent folder advertised; filing sent mail in %s", name)
+        self._sent_folder = name
+        return name
+
+    def append_sent(
+        self,
+        raw: bytes,
+        *,
+        message_id: Optional[str] = None,
+        when: Optional[datetime.datetime] = None,
+    ) -> Tuple[str, bool]:
+        """APPEND an already-sent message to the Sent folder. Returns (folder, appended).
+
+        SMTP delivers a message; it does not keep one. Filing the copy is the
+        client's job on every host that does not do it server-side -- which is
+        most of them, Soverin included -- and it is why a mail sent through
+        Squirrel could not be found afterwards in the folder the user (and
+        ``mail_search``) looks in.
+
+        Flagged ``\\Seen`` because a message you wrote yourself is not unread
+        mail, and stamped with the send time as INTERNALDATE so the copy sorts
+        where it belongs rather than at "now" in every later listing.
+
+        ``appended`` is False when a copy is already there: a few hosts do file
+        one themselves, and matching on the Message-ID first means those get
+        one copy rather than two.
+        """
+        target = self.sent_folder()
+        # Our own Message-ID (``email.utils.make_msgid``) never contains a
+        # quote; anything odd enough to break out of the search string is
+        # simply not used to search with.
+        probe = message_id if message_id and '"' not in message_id else None
+
+        def op(mb: BaseMailBox) -> Tuple[str, bool]:
+            self._select(mb, target)
+            if probe and list(mb.uids(f'HEADER Message-ID "{probe}"')):
+                logger.info("%s already holds %s; not filing a second copy", target, probe)
+                return target, False
+            mb.append(raw, target, dt=when, flag_set=[MailMessageFlags.SEEN])
+            return target, True
 
         return self._run(op)
 

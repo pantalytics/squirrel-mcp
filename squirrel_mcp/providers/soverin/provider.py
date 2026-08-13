@@ -8,9 +8,11 @@ future Gmail/Outlook provider has an obvious shape to copy.
 
 from __future__ import annotations
 
+import datetime
 from typing import List, Optional, Tuple
 
 from ...config import SquirrelConfig
+from ...logging_config import get_logger
 from ...search_query import MailQuery
 from ..protocol import (
     AttachmentPayload,
@@ -21,6 +23,8 @@ from ..protocol import (
 )
 from .imap import SoverinImapClient
 from .smtp import SoverinSmtpClient
+
+logger = get_logger(__name__)
 
 
 class SoverinMailProvider:
@@ -187,7 +191,7 @@ class SoverinMailProvider:
         body_html: Optional[str] = None,
     ) -> dict:
         in_reply_to, references = self._reply_headers(reply_to_uid, reply_to_folder)
-        return self._smtp.send(
+        result = self._smtp.send(
             to,
             subject,
             body,
@@ -198,3 +202,45 @@ class SoverinMailProvider:
             attachments=attachments,
             body_html=body_html,
         )
+        # The bytes and the timestamp are for the Sent copy alone and stop
+        # here -- the tool layer gets the outcome, not the message back.
+        raw = result.pop("raw", b"")
+        sent_at = result.pop("sent_at", None)
+        saved, folder = self._file_sent_copy(raw, result.get("message_id"), sent_at)
+        result["saved_to_sent"] = saved
+        result["sent_folder"] = folder
+        return result
+
+    def _file_sent_copy(
+        self,
+        raw: bytes,
+        message_id: Optional[str],
+        sent_at: Optional[datetime.datetime],
+    ) -> Tuple[bool, Optional[str]]:
+        """File what SMTP just delivered in the account's Sent folder.
+
+        This is the second thing only the provider can do (``_reply_headers``
+        is the first): SMTP has no idea what a folder is and IMAP has no idea
+        what was sent, so joining them is exactly this class's job.
+
+        **A failure here must not fail the send.** The message is already with
+        the recipient by the time this runs, and raising would report a send
+        that happened as one that did not -- which invites a retry and a second
+        copy in someone's inbox. So the outcome is carried back in the result
+        instead, and the tool layer says whether the copy landed.
+        """
+        if not raw:
+            return False, None
+        try:
+            folder, appended = self._imap.append_sent(
+                raw, message_id=message_id, when=sent_at
+            )
+        except Exception as exc:  # noqa: BLE001 - the mail is already gone
+            logger.warning(
+                "Message %s was sent but could not be filed in Sent: %s", message_id, exc
+            )
+            return False, None
+        logger.info(
+            "%s %s in %s", "Filed" if appended else "Found", message_id, folder
+        )
+        return True, folder

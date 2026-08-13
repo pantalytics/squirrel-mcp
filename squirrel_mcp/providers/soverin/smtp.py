@@ -7,6 +7,7 @@ part.
 
 from __future__ import annotations
 
+import datetime
 import smtplib
 import ssl
 from email.message import EmailMessage
@@ -79,11 +80,18 @@ class SoverinSmtpClient:
         attachments: Optional[List[OutgoingAttachment]] = None,
         body_html: Optional[str] = None,
     ) -> dict:
-        """Send a message and return {'message_id', 'recipients'}.
+        """Send a message and return {'message_id', 'recipients', 'raw', 'sent_at'}.
 
         ``in_reply_to``/``references`` come from the message being replied to
         (the provider reads them over IMAP) and are what put the reply in the
         thread rather than beside it.
+
+        ``raw`` and ``sent_at`` exist for one caller: the provider files a copy
+        of what went out in the account's Sent folder, and it can only do that
+        with *these* bytes -- rebuilding the message would mint a second
+        Message-ID and a second Date, so the copy would no longer be the mail
+        the recipient got. The provider consumes both keys and does not pass
+        them up to the tool layer.
         """
         msg = build_email(
             self._email,
@@ -101,13 +109,19 @@ class SoverinSmtpClient:
         if not recipients:
             raise MailProviderError("No recipients: 'to' is required")
 
-        # BCC must not travel in the message headers.
         message_id = msg["Message-ID"]
+        # The Sent copy is taken *before* the Bcc header comes off: a copy in
+        # your own Sent folder is the only record you keep of whom you bcc'd,
+        # and the draft path stores it for the same reason. Only what leaves
+        # the machine has to hide it -- BCC must not travel in the headers.
+        raw = msg.as_bytes()
+        delivered_size = len(raw)
         if "Bcc" in msg:
             del msg["Bcc"]
+            delivered_size = len(msg.as_bytes())
 
         try:
-            self._deliver(msg, recipients, len(msg.as_bytes()))
+            self._deliver(msg, recipients, delivered_size)
         except smtplib.SMTPAuthenticationError as exc:
             raise MailAuthError(f"SMTP authentication failed: {exc}") from exc
         except smtplib.SMTPException as exc:
@@ -127,7 +141,12 @@ class SoverinSmtpClient:
             ) from exc
 
         logger.info("Sent message %s to %d recipient(s)", message_id, len(recipients))
-        return {"message_id": message_id, "recipients": recipients}
+        return {
+            "message_id": message_id,
+            "recipients": recipients,
+            "raw": raw,
+            "sent_at": datetime.datetime.now(datetime.timezone.utc),
+        }
 
     def _deliver(self, msg: EmailMessage, recipients: List[str], size_bytes: int) -> None:
         timeout = _timeout_for(size_bytes)
