@@ -49,7 +49,14 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
 - `providers/soverin/` -- `SoverinMailProvider` (historical name; it is the plain
   IMAP/SMTP backend) delegates to `imap-tools` (IMAP) and stdlib SMTP. This is the
   only file that knows about IMAP/SMTP.
-- `providers/factory.py` -- picks the provider from `SQUIRREL_MAIL_PROVIDER`.
+- `providers/factory.py` -- picks the provider from `SQUIRREL_MAIL_PROVIDER` via
+  `MAIL_PROVIDER_REGISTRY` (one lazily-loaded entry per backend, the same shape
+  as pan_mail_pro's `PROVIDER_CLIENTS`). `tests/test_provider_contract.py`
+  guards the seam: registry and config name the same backends, every registered
+  backend implements the whole `MailProvider` protocol (a structural Protocol
+  fails at first call, not at import -- the test moves that to `make test`),
+  and the tool layer contains no reference to a concrete client, which used to
+  be only a convention below.
 - `SoverinImapClient.flag` is the one deliberate exception to principle 3: it
   issues its own `UID STORE` instead of calling `imap-tools`' `mb.flag`, because
   that helper follows every STORE with an `EXPUNGE` -- which would permanently

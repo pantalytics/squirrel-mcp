@@ -1,37 +1,52 @@
 """Provider selection.
 
-Maps ``config.mail_provider`` to a concrete ``MailProvider``. Adding Gmail/Outlook
-later is a new branch here plus a new subpackage -- nothing in the tool layer moves.
+Maps ``config.mail_provider`` to a concrete ``MailProvider`` through
+``MAIL_PROVIDER_REGISTRY`` -- one entry per backend, loaded lazily so only the
+selected backend's dependencies are imported. Adding Gmail/Outlook later is a
+new entry here plus a new subpackage -- nothing in the tool layer moves.
+
+The registry mirrors ``pan_mail_pro``'s ``PROVIDER_CLIENTS``: the set of names
+lives in exactly one place, and ``tests/test_provider_contract.py`` asserts it
+agrees with ``config.SUPPORTED_MAIL_PROVIDERS`` and that every registered class
+implements the whole ``MailProvider`` protocol.
 """
 
 from __future__ import annotations
+
+from typing import Callable, Dict, Type
 
 from ..config import SUPPORTED_MAIL_PROVIDERS, SquirrelConfig
 from .protocol import CalendarProvider, ContactsProvider, MailProvider
 
 
+def _load_imap() -> Type:
+    # Imported lazily so the IMAP backend only loads when selected.
+    from .soverin import SoverinMailProvider
+
+    return SoverinMailProvider
+
+
+# One entry per backend Squirrel can build. "imap" is any IMAP/SMTP mailbox --
+# you supply the host names yourself; there are no per-provider presets. A
+# future API-based backend ("gmail", "outlook") registers its loader here.
+MAIL_PROVIDER_REGISTRY: Dict[str, Callable[[], Type]] = {
+    "imap": _load_imap,
+}
+
+
 def create_mail_provider(config: SquirrelConfig) -> MailProvider:
     """Instantiate the mail provider named by ``config.mail_provider``.
-
-    Today the only backend is ``imap``: any IMAP/SMTP mailbox, with host/port/
-    security taken straight from the config. A future API-based backend (Gmail,
-    Outlook) would branch here to its own ``MailProvider`` implementation.
 
     The provider is returned unconnected; the server calls ``connect()`` during
     startup so credential/connection errors surface early.
     """
-    provider = config.mail_provider
-
-    if provider in SUPPORTED_MAIL_PROVIDERS:
-        # Imported lazily so the IMAP backend only loads when selected.
-        from .soverin import SoverinMailProvider
-
-        return SoverinMailProvider(config)
-
-    raise ValueError(
-        f"Unsupported mail provider: {provider!r}. "
-        f"Supported: {', '.join(sorted(SUPPORTED_MAIL_PROVIDERS))}."
-    )
+    loader = MAIL_PROVIDER_REGISTRY.get(config.mail_provider)
+    if loader is None:
+        raise ValueError(
+            f"Unsupported mail provider: {config.mail_provider!r}. "
+            f"Supported: {', '.join(sorted(MAIL_PROVIDER_REGISTRY))}."
+        )
+    return loader()(config)
 
 
 def create_calendar_provider(config: SquirrelConfig) -> CalendarProvider:
@@ -46,3 +61,12 @@ def create_contacts_provider(config: SquirrelConfig) -> ContactsProvider:
     from .soverin import SoverinContactsProvider
 
     return SoverinContactsProvider(config)
+
+
+__all__ = [
+    "MAIL_PROVIDER_REGISTRY",
+    "SUPPORTED_MAIL_PROVIDERS",
+    "create_mail_provider",
+    "create_calendar_provider",
+    "create_contacts_provider",
+]
