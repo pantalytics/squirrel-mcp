@@ -15,6 +15,7 @@ from .protocol import (
     AttachmentPayload,
     CalendarInfo,
     CalendarProvider,
+    ContactAddress,
     ContactDetail,
     ContactsProvider,
     ContactSummary,
@@ -58,4 +59,5 @@ __all__ = [
     "AddressBookInfo",
     "ContactSummary",
     "ContactDetail",
+    "ContactAddress",
 ]

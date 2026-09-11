@@ -84,6 +84,12 @@ Contacts tools (`contacts_*`, CardDAV): contacts_list_addressbooks · contacts_s
 (paginated) · contacts_read · contacts_create / contacts_update / contacts_delete
 (all writes need confirm=true). Resolve the addressbook id via
 contacts_list_addressbooks first.
+- Postal addresses: contacts_read returns `addresses` (a list, [] when none);
+  contacts_create / contacts_update take `addresses` as a list of objects with
+  `type` ("home"|"work"), `street`, `extended`, `po_box`, `city`, `region`,
+  `postal_code`, `country`, `preferred` -- never a flat string. Passing the
+  list replaces every address ([] clears them); omitting it leaves them alone.
+  contacts_search does not carry addresses; read the contact for those.
 
 Calendar tools (`calendar_*`): calendar_list_calendars · calendar_search_events
 (ISO date window, defaults to ~±6 months) · calendar_read_event · calendar_create_event

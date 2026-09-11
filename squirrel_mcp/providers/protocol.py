@@ -505,6 +505,27 @@ class ContactSummary:
 
 
 @dataclass
+class ContactAddress:
+    """One postal address -- vCard's seven ``ADR`` components plus its params.
+
+    The components are named, not positional, so a backend that keeps them in
+    a different shape (Graph's ``homeAddress`` / ``businessAddress``) maps the
+    ones it has and leaves the rest empty. ``type`` is ``home`` or ``work``;
+    ``preferred`` is vCard's ``PREF``.
+    """
+
+    type: str = "home"
+    street: str = ""
+    extended: str = ""
+    po_box: str = ""
+    city: str = ""
+    region: str = ""
+    postal_code: str = ""
+    country: str = ""
+    preferred: bool = False
+
+
+@dataclass
 class ContactDetail:
     uid: str
     addressbook: str
@@ -514,6 +535,9 @@ class ContactDetail:
     organization: Optional[str]
     title: Optional[str]
     note: Optional[str]
+    # Default so a backend written before addresses existed still constructs;
+    # the tool reports an empty list, never null.
+    addresses: List[ContactAddress] = field(default_factory=list)
 
 
 @runtime_checkable
@@ -552,6 +576,7 @@ class ContactsProvider(Protocol):
         emails: Optional[List[str]] = None,
         phones: Optional[List[str]] = None,
         organization: Optional[str] = None,
+        addresses: Optional[List[ContactAddress]] = None,
     ) -> str:
         """Create a contact. Returns its uid."""
         ...
@@ -565,6 +590,16 @@ class ContactsProvider(Protocol):
         emails: Optional[List[str]] = None,
         phones: Optional[List[str]] = None,
         organization: Optional[str] = None,
-    ) -> str: ...
+        addresses: Optional[List[ContactAddress]] = None,
+    ) -> str:
+        """Update a contact in place. ``None`` leaves a field untouched.
+
+        ``emails`` / ``phones`` / ``addresses`` replace the whole list when
+        given (``[]`` clears it). Everything the backend does not model --
+        ``PHOTO``, ``CATEGORIES``, ``X-*`` -- must survive the write: this is
+        read-modify-write on the full record, never a rebuild from the fields
+        the tool knows.
+        """
+        ...
 
     def delete_contact(self, addressbook: str, uid: str) -> None: ...
