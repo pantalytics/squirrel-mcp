@@ -25,6 +25,7 @@ from ...config import SquirrelConfig
 from ...logging_config import get_logger
 from ..protocol import (
     AddressBookInfo,
+    ContactAddress,
     ContactDetail,
     ContactSummary,
     ProviderAuthError,
@@ -195,8 +196,14 @@ class SoverinContactsProvider:
             raise ProviderError(f"PROPFIND {url} returned HTTP {r.status_code}")
         return ET.fromstring(r.content)
 
-    def _report_cards(self, book_url: str) -> List[Tuple[str, str]]:
-        """Return [(href, vcard_text)] for every card in an address book."""
+    def _report_cards(self, book_url: str) -> List[Tuple[str, str, str]]:
+        """Return [(href, vcard_text, etag)] for every card in an address book.
+
+        The ETag rides along so a write can send it back as ``If-Match``: an
+        update is read-modify-write on the whole card, and without it the
+        write would silently overwrite whatever another client saved between
+        our read and our PUT.
+        """
         self.authenticate()
         r = self._client.request(
             "REPORT", book_url,
@@ -212,8 +219,9 @@ class SoverinContactsProvider:
         for resp in root.findall("d:response", NS):
             href = resp.findtext("d:href", default="", namespaces=NS)
             data = resp.findtext(".//card:address-data", default="", namespaces=NS)
+            etag = (resp.findtext(".//d:getetag", default="", namespaces=NS) or "").strip()
             if href and data and href.lower().endswith(".vcf"):
-                out.append((href, data))
+                out.append((href, data, etag))
         return out
 
     # ---- reads ----------------------------------------------------------- #
@@ -239,7 +247,7 @@ class SoverinContactsProvider:
     ) -> Tuple[List[ContactSummary], int]:
         cards = self._report_cards(self._abs(addressbook))
         summaries = []
-        for _href, text in cards:
+        for _href, text, _etag in cards:
             try:
                 summaries.append(self._to_summary(text, addressbook))
             except Exception:  # noqa: BLE001 - skip unparseable cards
@@ -257,7 +265,7 @@ class SoverinContactsProvider:
         return summaries[offset : offset + limit], total
 
     def get_contact(self, addressbook: str, uid: str) -> ContactDetail:
-        _, text = self._find_card(addressbook, uid)
+        _, text, _ = self._find_card(addressbook, uid)
         card = vobject.readOne(text)
         return self._to_detail(card, addressbook)
 
@@ -270,6 +278,7 @@ class SoverinContactsProvider:
         emails: Optional[List[str]] = None,
         phones: Optional[List[str]] = None,
         organization: Optional[str] = None,
+        addresses: Optional[List[ContactAddress]] = None,
     ) -> str:
         uid = str(uuid.uuid4())
         card = vobject.vCard()
@@ -288,6 +297,8 @@ class SoverinContactsProvider:
             card.add("tel").value = ph
         if organization:
             card.add("org").value = [organization]
+        if addresses:
+            self._write_addresses(card, addresses)
 
         href = urljoin(self._abs(addressbook).rstrip("/") + "/", f"{uid}.vcf")
         self.authenticate()
@@ -309,8 +320,9 @@ class SoverinContactsProvider:
         emails: Optional[List[str]] = None,
         phones: Optional[List[str]] = None,
         organization: Optional[str] = None,
+        addresses: Optional[List[ContactAddress]] = None,
     ) -> str:
-        href, text = self._find_card(addressbook, uid)
+        href, text, etag = self._find_card(addressbook, uid)
         card = vobject.readOne(text)
         if full_name is not None:
             card.fn.value = full_name
@@ -331,32 +343,42 @@ class SoverinContactsProvider:
                 card.org.value = [organization]
             else:
                 card.add("org").value = [organization]
+        if addresses is not None:
+            self._write_addresses(card, addresses)
         self.authenticate()
         r = self._client.put(
             self._abs(href),
             content=card.serialize(),
-            headers={"Content-Type": "text/vcard; charset=utf-8"},
+            headers={"Content-Type": "text/vcard; charset=utf-8", **self._if_match(etag)},
         )
+        if r.status_code == 412:
+            raise ProviderError(
+                f"Contact {uid} changed on the server since it was read; read it again and retry"
+            )
         if r.status_code not in (200, 201, 204):
             raise ProviderError(f"Update contact failed: HTTP {r.status_code}")
         return uid
 
     def delete_contact(self, addressbook: str, uid: str) -> None:
-        href, _ = self._find_card(addressbook, uid)
+        href, _, etag = self._find_card(addressbook, uid)
         self.authenticate()
-        r = self._client.delete(self._abs(href))
+        r = self._client.delete(self._abs(href), headers=self._if_match(etag))
+        if r.status_code == 412:
+            raise ProviderError(
+                f"Contact {uid} changed on the server since it was read; read it again and retry"
+            )
         if r.status_code not in (200, 204):
             raise ProviderError(f"Delete contact failed: HTTP {r.status_code}")
 
     # ---- helpers --------------------------------------------------------- #
-    def _find_card(self, addressbook: str, uid: str) -> Tuple[str, str]:
-        for href, text in self._report_cards(self._abs(addressbook)):
+    def _find_card(self, addressbook: str, uid: str) -> Tuple[str, str, str]:
+        for href, text, etag in self._report_cards(self._abs(addressbook)):
             try:
                 card = vobject.readOne(text)
             except Exception:  # noqa: BLE001
                 continue
             if getattr(getattr(card, "uid", None), "value", None) == uid:
-                return href, text
+                return href, text, etag
         raise ProviderNotFoundError(f"Contact {uid} not found in {addressbook}")
 
     @classmethod
@@ -382,7 +404,73 @@ class SoverinContactsProvider:
             organization=cls._org(card),
             title=getattr(getattr(card, "title", None), "value", None),
             note=getattr(getattr(card, "note", None), "value", None),
+            addresses=cls._addresses(card),
         )
+
+    @staticmethod
+    def _if_match(etag: str) -> dict:
+        """``If-Match`` for a write, when the REPORT handed us an ETag at all."""
+        return {"If-Match": etag} if etag else {}
+
+    # ---- addresses ------------------------------------------------------- #
+    # vCard's ADR is seven ``;``-separated components in a fixed order:
+    # po_box;extended;street;city;region;postal_code;country. ``vobject``
+    # does the escaping (``;`` ``,`` ``\`` and newlines) in both directions;
+    # what this layer adds is the params, which differ per vCard version and
+    # are written in the dialect the card already speaks so a 3.0 card stays
+    # 3.0 and a 4.0 card stays 4.0.
+
+    @classmethod
+    def _addresses(cls, card) -> List[ContactAddress]:
+        out = []
+        for adr in card.contents.get("adr", []):
+            v = adr.value
+            types = [t.lower() for t in adr.params.get("TYPE", [])]
+            pref = adr.params.get("PREF", [])
+            out.append(ContactAddress(
+                type="work" if "work" in types else "home",
+                street=cls._component(v.street),
+                extended=cls._component(v.extended),
+                po_box=cls._component(v.box),
+                city=cls._component(v.city),
+                region=cls._component(v.region),
+                postal_code=cls._component(v.code),
+                country=cls._component(v.country),
+                # 3.0 spells it TYPE=PREF; 4.0 PREF=1 (lower is more preferred).
+                preferred="pref" in types or pref == ["1"],
+            ))
+        return out
+
+    @staticmethod
+    def _component(value) -> str:
+        # A component holding an unescaped ``,`` parses as a list.
+        if isinstance(value, list):
+            return ", ".join(str(v) for v in value if v)
+        return str(value or "")
+
+    @classmethod
+    def _write_addresses(cls, card, addresses: List[ContactAddress]) -> None:
+        """Replace every ADR (and the 3.0 LABELs that describe them)."""
+        for a in list(card.contents.get("adr", [])):
+            card.remove(a)
+        # A LABEL is a client's own rendering of an ADR; one left behind would
+        # describe an address that no longer exists.
+        for lab in list(card.contents.get("label", [])):
+            card.remove(lab)
+        v4 = getattr(getattr(card, "version", None), "value", "3.0") == "4.0"
+        for a in addresses:
+            adr = card.add("adr")
+            adr.value = vobject.vcard.Address(
+                box=a.po_box, extended=a.extended, street=a.street, city=a.city,
+                region=a.region, code=a.postal_code, country=a.country,
+            )
+            kind = a.type if a.type in ("home", "work") else "home"
+            if v4:
+                adr.params["TYPE"] = [kind]
+                if a.preferred:
+                    adr.params["PREF"] = ["1"]
+            else:
+                adr.params["TYPE"] = [kind.upper()] + (["PREF"] if a.preferred else [])
 
     @staticmethod
     def _org(card) -> Optional[str]:

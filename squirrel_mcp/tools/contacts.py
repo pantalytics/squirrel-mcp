@@ -5,17 +5,18 @@ Same shape as the calendar handler. Write tools require ``confirm=true``.
 
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from ..config import SquirrelConfig
 from ..error_handling import ValidationError
-from ..providers import ContactsProvider
+from ..providers import ContactAddress, ContactsProvider
 from ..schemas import (
     AddressBookList,
     AddressBookOut,
+    ContactAddressOut,
     ContactDetailOut,
     ContactList,
     ContactOut,
@@ -87,6 +88,7 @@ class ContactsToolHandler:
                 uid=c.uid, addressbook=c.addressbook, full_name=c.full_name,
                 emails=c.emails, phones=c.phones, organization=c.organization,
                 title=c.title, note=c.note,
+                addresses=[ContactAddressOut(**vars(a)) for a in c.addresses],
             )
 
         @self.app.tool(title="Create Contact", annotations=_WRITE)
@@ -96,14 +98,20 @@ class ContactsToolHandler:
             emails: Optional[Any] = None,
             phones: Optional[Any] = None,
             organization: Optional[str] = None,
+            addresses: Optional[List[ContactAddressOut]] = None,
             confirm: bool = False,
         ) -> ContactWriteResult:
-            """Create a contact. Requires confirm=true; confirm details first."""
+            """Create a contact. Requires confirm=true; confirm details first.
+
+            addresses: list of postal addresses, each an object with type
+            ("home"|"work"), street, extended, po_box, city, region, postal_code,
+            country, preferred -- all optional, at least one filled."""
             provider, sub = await self._get_provider(writes=True)
             require_confirm(confirm, "Creating a contact")
             uid = await run_blocking(
                 provider, provider.create_contact, addressbook, full_name,
                 emails=as_str_list(emails), phones=as_str_list(phones), organization=organization,
+                addresses=_addresses_in(addresses),
             )
             self._track_usage(sub, "contacts_create")
             return ContactWriteResult(uid=uid, addressbook=addressbook, status="Contact created")
@@ -116,10 +124,15 @@ class ContactsToolHandler:
             emails: Optional[Any] = None,
             phones: Optional[Any] = None,
             organization: Optional[str] = None,
+            addresses: Optional[List[ContactAddressOut]] = None,
             confirm: bool = False,
         ) -> ContactWriteResult:
             """Update a contact. Requires confirm=true. Omitted fields are left unchanged;
-            emails/phones replace the existing lists when provided."""
+            emails/phones/addresses replace the existing lists when provided ([] clears).
+
+            addresses: list of objects with type ("home"|"work"), street, extended,
+            po_box, city, region, postal_code, country, preferred -- same shape
+            contacts_read returns."""
             provider, sub = await self._get_provider(writes=True)
             require_confirm(confirm, "Updating a contact")
             new_uid = await run_blocking(
@@ -128,6 +141,7 @@ class ContactsToolHandler:
                 emails=as_str_list(emails) if emails is not None else None,
                 phones=as_str_list(phones) if phones is not None else None,
                 organization=organization,
+                addresses=_addresses_in(addresses) if addresses is not None else None,
             )
             self._track_usage(sub, "contacts_update")
             return ContactWriteResult(uid=new_uid, addressbook=addressbook, status="Contact updated")
@@ -142,6 +156,25 @@ class ContactsToolHandler:
             await run_blocking(provider, provider.delete_contact, addressbook, uid)
             self._track_usage(sub, "contacts_delete")
             return ContactWriteResult(uid=uid, addressbook=addressbook, status="Contact deleted")
+
+
+def _addresses_in(addresses: Optional[List[ContactAddressOut]]) -> List[ContactAddress]:
+    """Tool-argument addresses → provider dataclasses. Object form only, on purpose.
+
+    A flat string ("Jura 28, Almelo") has no unambiguous split into the seven
+    ADR components, so accepting one would mean guessing which part is the
+    city. Pydantic already refused anything that is not the object shape;
+    what is left to check is that an address says *something*.
+    """
+    out = []
+    for i, a in enumerate(addresses or []):
+        fields = {k: v.strip() for k, v in vars(a).items() if isinstance(v, str)}
+        if not any(fields[k] for k in fields if k != "type"):
+            raise ValidationError(f"addresses[{i}] is empty; fill in at least one field")
+        out.append(ContactAddress(type=a.type, preferred=a.preferred, **{
+            k: v for k, v in fields.items() if k != "type"
+        }))
+    return out
 
 
 def _contact_out(c) -> ContactOut:

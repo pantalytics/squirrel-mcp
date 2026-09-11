@@ -229,6 +229,23 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   `tests/test_carddav_discovery.py` pins all of it, including that a 401 stays a
   401 instead of being retried into "no address books found". The CalDAV side
   needs none of this: the `caldav` library's `principal()` already does it.
+- **A postal address is vCard's `ADR`, component by component.** `contacts_read`
+  returns `addresses` and `contacts_create` / `contacts_update` take it, as a
+  list of objects (`type` home|work, `street`, `extended`, `po_box`, `city`,
+  `region`, `postal_code`, `country`, `preferred`) that map 1:1 onto the seven
+  ADR components. Same semantics as `emails`/`phones`: the list replaces, `[]`
+  clears, omitted leaves alone. Three deliberate no's: `contacts_search` does
+  not carry addresses (read the contact), there is **no flat-string shorthand**
+  (`"Jura 28, Almelo"` has no unambiguous split into seven components, so a
+  guess would file the city wrong), and the admin package's Graph provider
+  does not accept it yet. `vobject` does the `;` `,` `\` escaping; the
+  provider writes the params in the dialect the card already speaks
+  (`TYPE=HOME,PREF` on 3.0, `TYPE=home;PREF=1` on 4.0) and drops a 3.0
+  `LABEL` when it replaces the ADRs it described. Writes are read-modify-write
+  on the whole card and now send the REPORT's ETag as `If-Match`, so an update
+  cannot overwrite what another client saved in between (a 412 is a clear
+  "read it again"). `tests/test_contacts_addresses.py` pins all of it;
+  `scripts/e2e_contact_address.py` is the acceptance run against a live book.
 - Blocking IMAP/SMTP calls run off the event loop via `tools/_common.run_blocking`
   (per-provider `asyncio.Lock` -> one socket is never used by two threads).
 - Single-tenant: one mailbox from env vars (stdio or HTTP). The hosted

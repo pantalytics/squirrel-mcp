@@ -4,7 +4,7 @@ These are the client-facing shapes. The tool layer maps the provider's
 transport-neutral dataclasses (``providers.protocol``) onto these.
 """
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -256,6 +256,24 @@ class AddressBookList(BaseModel):
     addressbooks: List[AddressBookOut]
 
 
+class ContactAddressOut(BaseModel):
+    """One postal address: vCard ADR, component by component.
+
+    Also the shape ``contacts_create`` / ``contacts_update`` take in
+    ``addresses`` -- every field optional, at least one filled in.
+    """
+
+    type: Literal["home", "work"] = Field(default="home", description="home or work")
+    street: str = Field(default="", description="Street and number, e.g. 'Jura 28'")
+    extended: str = Field(default="", description="Flat, floor, building; usually empty")
+    po_box: str = Field(default="", description="PO box; usually empty")
+    city: str = Field(default="", description="e.g. 'Almelo'")
+    region: str = Field(default="", description="Province or state; usually empty")
+    postal_code: str = Field(default="", description="e.g. '7607 RG'")
+    country: str = Field(default="", description="e.g. 'Netherlands'")
+    preferred: bool = Field(default=False, description="The contact's main address")
+
+
 class ContactOut(BaseModel):
     uid: str = Field(description="Contact id; pass to contacts_read")
     addressbook: str
@@ -276,6 +294,9 @@ class ContactList(BaseModel):
 class ContactDetailOut(ContactOut):
     title: Optional[str] = None
     note: Optional[str] = None
+    addresses: List[ContactAddressOut] = Field(
+        default_factory=list, description="Postal addresses, in vCard order; [] when none"
+    )
 
 
 class ContactWriteResult(BaseModel):
