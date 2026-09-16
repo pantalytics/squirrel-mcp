@@ -170,6 +170,38 @@ def test_flag_and_unflag_round_trip(provider):
     assert _find_by_subject(only, subject) is None
 
 
+def test_mark_read_and_unread_round_trip(provider):
+    """\\Seen against a real server, and against the unread filter.
+
+    Same reason as the flag round trip: ``set_seen`` writes its own ``UID
+    STORE``. The extra thing proved here is that the server then agrees --
+    ``unseen_only`` is answered by IMAP's own ``UNSEEN`` key, so a marker the
+    tool set has to be the one the search reads.
+    """
+    p, cfg = provider
+    subject = f"E2E seen {uuid.uuid4().hex[:8]}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, "Mark me.")
+
+    inbox, _ = p.search("INBOX", limit=50)
+    target = _find_by_subject(inbox, subject)
+    assert target is not None
+    assert "\\Seen" not in target.flags
+    unread, _ = p.search("INBOX", unseen_only=True, limit=50)
+    assert _find_by_subject(unread, subject) is not None
+
+    assert p.set_seen("INBOX", [target.uid]) == 1
+    inbox, _ = p.search("INBOX", limit=50)
+    assert "\\Seen" in _find_by_subject(inbox, subject).flags
+    unread, _ = p.search("INBOX", unseen_only=True, limit=50)
+    assert _find_by_subject(unread, subject) is None
+
+    assert p.set_seen("INBOX", [target.uid], seen=False) == 1
+    inbox, _ = p.search("INBOX", limit=50)
+    assert "\\Seen" not in _find_by_subject(inbox, subject).flags
+    unread, _ = p.search("INBOX", unseen_only=True, limit=50)
+    assert _find_by_subject(unread, subject) is not None
+
+
 def test_flag_does_not_expunge_deleted_messages(provider):
     """Flagging must not take other messages with it.
 

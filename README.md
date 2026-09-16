@@ -41,10 +41,14 @@ is configured.
 | `mail_send` | Send a message, attachments included — **requires `confirm=true`** | ⚠️ outgoing |
 | `mail_move` | Move messages between folders — **requires `confirm=true`** | ⚠️ mutating |
 | `mail_flag` | Flag / unflag messages — the star, `flagged=false` clears it | reversible |
+| `mail_mark_read` | Mark messages read / unread, `read=false` clears it | reversible |
 
-Flagging and finding are two halves of one thing: `mail_flag` sets the marker,
-`mail_search(flagged_only=true)` gets those messages back — filtered by the
-server, not by paging a folder.
+Marking and finding are two halves of one thing: `mail_flag` sets the star and
+`mail_search(flagged_only=true)` gets those messages back; `mail_mark_read`
+sets the read state and `mail_search(unseen_only=true)` gets back what is left
+— filtered by the server, not by paging a folder. Reading a message with
+`mail_read` does *not* mark it read, so "what I have not looked at yet" stays
+yours to answer.
 
 **Attachments** go both ways. `mail_read` lists them and `mail_get_attachment`
 downloads one; sending takes an `attachments` list on `mail_send`, `mail_draft`

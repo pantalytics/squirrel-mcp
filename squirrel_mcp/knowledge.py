@@ -79,6 +79,13 @@ Mail tools (all prefixed `mail_`):
   confirmation needed, because it changes no message and is reversible by the
   same tool, so it is the natural way to mark things for the user to follow up
   on. Flagged messages come back from mail_search with "\\Flagged" in `flags`.
+- mail_mark_read: mark messages read, or `read=false` to put them back to
+  unread -- the bold-or-not state, and how an inbox is cleared down after a
+  mass mailing. No confirmation needed, for the same reason as mail_flag.
+  Note that mail_read does NOT mark anything read: what is unread stays the
+  user's own answer to "what have I not looked at", so say what you are about
+  to sweep before sweeping it. `unseen_only=true` on mail_search finds what is
+  left.
 
 Contacts tools (`contacts_*`, CardDAV): contacts_list_addressbooks · contacts_search
 (paginated) · contacts_read · contacts_create / contacts_update / contacts_delete
