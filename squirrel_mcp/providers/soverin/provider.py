@@ -173,6 +173,9 @@ class SoverinMailProvider:
     def move(self, folder: str, uids: List[str], destination: str) -> int:
         return self._imap.move(folder, uids, destination)
 
+    def delete(self, folder: str, uids: List[str]) -> Tuple[int, str]:
+        return self._imap.delete(folder, uids)
+
     def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
         return self._imap.flag(folder, uids, flagged)
 

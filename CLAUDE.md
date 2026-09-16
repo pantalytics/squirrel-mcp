@@ -186,6 +186,32 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   into. `tests/test_send_draft.py` pins the bytes, the two headers and the
   never-fatal rule; the GreenMail e2e drafts, sends and then finds it in the
   inbox, in Sent, and gone from Drafts.
+- **A folder's name is not knowable; its role is.** The Sent copy above reads
+  the `\Sent` SPECIAL-USE attribute (RFC 6154) rather than guessing a
+  localized name, and everything else went on guessing: `mail_move(destination=
+  "Archive")` is wrong on a Dutch mailbox that archives into "Archief", and
+  there was no delete at all. So that one lookup became a table --
+  `SPECIAL_USE_FOLDERS` in `providers/protocol.py`, five roles with their
+  attribute and the conventional English fallback -- and `imap.special_folder`
+  resolves any of them (`sent_folder()` is now a one-line caller of it, so the
+  Sent path is unchanged). Two things use it. `mail_list_folders` reports each
+  folder's **`role`**, which is what replaces guessing: archiving is an
+  ordinary `mail_move` to the folder that claims to be the archive, and
+  un-archiving is that move reversed -- no tool of its own, because none is
+  needed once the name is knowable. And **`mail_delete`** takes no destination
+  at all: the backend finds its own Trash and reports it in `trash_folder`, so
+  the user is told where the message went rather than only that it is gone.
+  **Delete is a move, and deliberately nothing more.** No expunge, and no
+  `\Deleted` flag either -- the first puts the message beyond recovery behind
+  a tool advertised as the delete key, and the second is the trap `flag`
+  already documents, since another client's pending deletions are not ours to
+  hand to the next expunge. Deleting *out of* Trash is refused by name rather
+  than quietly becoming an erase. The role table lives in `protocol.py`, not
+  `imap.py`, because the tool layer needs `folder_role` and may not import a
+  concrete client. `tests/test_delete_and_roles.py` pins the lookup (including
+  a decoy English "Archive" the server did not flag), the caching, the absent
+  expunge and the tool's confirm gate; the GreenMail e2e deletes for real and
+  reads the message back out of Trash.
 - **A meeting is not an appointment, and CalDAV only does the second.**
   `calendar_create_event` takes `attendees` and `online_meeting`, and both are
   gated on a capability the provider declares -- `supports_attendees` /

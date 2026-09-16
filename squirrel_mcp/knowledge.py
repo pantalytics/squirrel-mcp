@@ -121,6 +121,18 @@ Dates/times are ISO 8601 (YYYY-MM-DD for all-day, otherwise full datetime).
   so rather than creating the event without them. That is not a bug to work
   around: offer the event without attendees, or another account.
 
+- FOLDER ROLES: mail_list_folders gives every folder a `role` when the server
+  declares one -- sent, trash, archive, junk, drafts. Use it; do NOT guess an
+  English folder name. "Archive this" means mail_move to the folder whose role
+  is "archive" (it may be called "Archief"), and un-archiving is that move
+  reversed. Anything with no role is the user's own filing.
+- mail_delete: the delete key. DESTRUCTIVE -- requires confirm=true, and show
+  the user the subjects and senders first, not just uids. It MOVES the messages
+  to the account's Trash rather than erasing them, and `trash_folder` in the
+  result says where; repeat that back, because it is where the user gets them
+  back from with mail_move. If they only want the inbox cleared, archiving is
+  usually what they mean -- offer it.
+
 Good habits:
 - Resolve folder/addressbook/calendar ids with the matching list_* tool first.
 - Prefer drafting (mail_draft) and letting the user review over sending directly,

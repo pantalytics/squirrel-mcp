@@ -11,6 +11,7 @@ from squirrel_mcp.providers.protocol import (
     AttachmentPayload,
     FolderInfo,
     MailNotFoundError,
+    MailProviderError,
     MessageDetail,
     MessageSummary,
 )
@@ -23,6 +24,7 @@ class FakeMailProvider:
         self.connected = False
         self.sent: list = []
         self.moved: list = []
+        self.deleted: list = []
         self.drafts: list = []
         # Every send/save_draft's keyword arguments, so a test can assert what
         # the tool layer handed the backend (threading in particular).
@@ -74,7 +76,15 @@ class FakeMailProvider:
         self.connected = False
 
     def list_folders(self) -> List[FolderInfo]:
-        return [FolderInfo(name="INBOX"), FolderInfo(name="Drafts"), FolderInfo(name="Archive")]
+        # Deliberately Dutch: the names a caller would guess are wrong here,
+        # which is the whole reason folders report a role.
+        return [
+            FolderInfo(name="INBOX"),
+            FolderInfo(name="Drafts", flags=["\\Drafts"]),
+            FolderInfo(name="Archive"),
+            FolderInfo(name="Archief", flags=["\\HasNoChildren", "\\Archive"]),
+            FolderInfo(name="Prullenbak", flags=["\\Trash"]),
+        ]
 
     def search(
         self,
@@ -209,6 +219,13 @@ class FakeMailProvider:
     def move(self, folder, uids, destination) -> int:
         self.moved.append((folder, uids, destination))
         return len(uids)
+
+    def delete(self, folder, uids):
+        if folder == "Trash":
+            raise MailProviderError("These messages are already in Trash.")
+        self.moved.append((folder, uids, "Prullenbak"))
+        self.deleted.append((folder, list(uids)))
+        return len(uids), "Prullenbak"
 
     def flag(self, folder, uids, flagged: bool = True) -> int:
         for uid in uids:

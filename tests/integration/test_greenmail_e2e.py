@@ -14,6 +14,7 @@ import pytest
 from imap_tools import MailBoxUnencrypted
 
 from squirrel_mcp.providers import OutgoingAttachment, create_mail_provider
+from squirrel_mcp.providers.protocol import MailProviderError, folder_role
 
 pytestmark = pytest.mark.integration
 
@@ -63,7 +64,10 @@ def _seed_message(
 
 @pytest.fixture
 def provider(greenmail):
-    _ensure_folders(greenmail.imap_host, greenmail.imap_port, "Drafts", "Archive", "Sent")
+    _ensure_folders(
+        greenmail.imap_host, greenmail.imap_port,
+        "Drafts", "Archive", "Sent", "Trash",
+    )
     p = create_mail_provider(greenmail)
     p.connect()
     yield p, greenmail
@@ -651,3 +655,88 @@ def test_a_sent_draft_keeps_its_attachment_and_its_thread(provider):
 
     raw, _names = p._imap.fetch_outgoing("INBOX", arrived.uid)
     assert raw["In-Reply-To"] == parent_id
+
+
+def test_delete_files_the_message_in_trash_and_it_is_still_there(provider):
+    """Against a real server, because the promise is recoverability: the
+    message must be gone from INBOX AND readable out of Trash afterwards. A
+    delete that expunged would pass the first half of this and fail the second.
+    """
+    p, cfg = provider
+    subject = f"E2E delete {uuid.uuid4().hex[:8]}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, "Throw me away.")
+
+    inbox, _ = p.search("INBOX", limit=50)
+    target = _find_by_subject(inbox, subject)
+    assert target is not None
+
+    deleted, trash = p.delete("INBOX", [target.uid])
+    assert deleted == 1
+
+    inbox, _ = p.search("INBOX", limit=50)
+    assert _find_by_subject(inbox, subject) is None, "still in the inbox"
+
+    binned, _ = p.search(trash, limit=50)
+    recovered = _find_by_subject(binned, subject)
+    assert recovered is not None, f"not in {trash} -- it was erased, not deleted"
+    assert p.fetch_message(trash, recovered.uid).body_text.strip() == "Throw me away."
+
+
+def test_a_deleted_message_can_be_moved_back(provider):
+    """The other half of "the user can get it back": Trash is an ordinary
+    folder, so mail_move undoes a delete with no special tool."""
+    p, cfg = provider
+    subject = f"E2E undelete {uuid.uuid4().hex[:8]}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, "Second thoughts.")
+
+    inbox, _ = p.search("INBOX", limit=50)
+    target = _find_by_subject(inbox, subject)
+    assert target is not None
+    _deleted, trash = p.delete("INBOX", [target.uid])
+
+    binned, _ = p.search(trash, limit=50)
+    back = _find_by_subject(binned, subject)
+    assert back is not None
+    p.move(trash, [back.uid], "INBOX")
+
+    inbox, _ = p.search("INBOX", limit=50)
+    assert _find_by_subject(inbox, subject) is not None
+
+
+def test_deleting_out_of_trash_is_refused(provider):
+    p, cfg = provider
+    subject = f"E2E double delete {uuid.uuid4().hex[:8]}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, "Once is enough.")
+
+    inbox, _ = p.search("INBOX", limit=50)
+    target = _find_by_subject(inbox, subject)
+    assert target is not None
+    _deleted, trash = p.delete("INBOX", [target.uid])
+
+    binned, _ = p.search(trash, limit=50)
+    again = _find_by_subject(binned, subject)
+    assert again is not None
+    with pytest.raises(MailProviderError, match="already in"):
+        p.delete(trash, [again.uid])
+
+
+def test_archiving_uses_the_folder_the_server_flags(provider):
+    """What replaces guessing the word "Archive". GreenMail advertises no
+    SPECIAL-USE, so this also proves the fallback is a working answer rather
+    than a name that fails on the move.
+    """
+    p, cfg = provider
+    subject = f"E2E archive {uuid.uuid4().hex[:8]}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, "File me away.")
+
+    archive = next(
+        (f.name for f in p.list_folders() if folder_role(f.flags) == "archive"),
+        p._imap.special_folder("archive"),
+    )
+    inbox, _ = p.search("INBOX", limit=50)
+    target = _find_by_subject(inbox, subject)
+    assert target is not None
+
+    assert p.move("INBOX", [target.uid], archive) == 1
+    filed, _ = p.search(archive, limit=50)
+    assert _find_by_subject(filed, subject) is not None

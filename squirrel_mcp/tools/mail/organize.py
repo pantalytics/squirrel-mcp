@@ -10,7 +10,7 @@ from typing import Any, Optional
 from mcp.types import ToolAnnotations
 
 from ...error_handling import ValidationError
-from ...schemas import FlagResult, MoveResult, SeenResult
+from ...schemas import DeleteResult, FlagResult, MoveResult, SeenResult
 from .._common import as_str_list, require_confirm, run_blocking
 
 
@@ -54,6 +54,64 @@ class OrganizeToolsMixin:
                 moved=moved,
                 source_folder=source_folder,
                 destination_folder=destination_folder,
+                uids=uid_list,
+            )
+
+        @self.app.tool(
+            title="Delete Mail",
+            annotations=ToolAnnotations(
+                readOnlyHint=False,
+                destructiveHint=True,
+                idempotentHint=False,
+                openWorldHint=True,
+            ),
+        )
+        async def mail_delete(
+            uids: Any,
+            folder: str = "INBOX",
+            confirm: bool = False,
+            account: Optional[str] = None,
+        ) -> DeleteResult:
+            """Throw messages away -- the delete key. Requires confirm=true.
+
+            They are moved to the account's own Trash, NOT erased, so the user
+            can still get them back; ``trash_folder`` in the result names where
+            they went, and mail_move brings them back. Say both when you report
+            it. There is no destination argument: the Trash folder is localized
+            and the server is asked for it.
+
+            Show the user which messages (subject and sender, not just uids)
+            before calling with confirm=true.
+
+            Args:
+                uids: Message uids from mail_search in ``folder``. Accepts a
+                    list or a comma-separated string.
+                folder: Folder the messages live in (default "INBOX"). Must be
+                    the folder the uids came from.
+                account: Which email account (id or address from
+                    mail_list_accounts). Omit when only one is configured.
+
+            To ARCHIVE rather than delete, use mail_move to the folder
+            mail_list_folders reports with role "archive" -- archiving keeps
+            the message, which is usually what "get it out of my inbox" means.
+            """
+            provider, sub = await self._get_provider(account, writes=True)
+            delete = getattr(provider, "delete", None)
+            if delete is None:
+                raise ValidationError(
+                    "This account's mail backend cannot delete messages. Move "
+                    "them to the Trash folder with mail_move instead."
+                )
+            uid_list = as_str_list(uids)
+            if not uid_list:
+                raise ValidationError("'uids' is required (at least one message uid)")
+            require_confirm(confirm, "Deleting mail")
+            deleted, trash = await run_blocking(provider, delete, folder, uid_list)
+            self._track_usage(sub, "mail_delete")
+            return DeleteResult(
+                deleted=deleted,
+                source_folder=folder,
+                trash_folder=trash,
                 uids=uid_list,
             )
 
