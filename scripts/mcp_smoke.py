@@ -26,6 +26,7 @@ EXPECTED_TOOLS = {
     "mail_send_draft",
     "mail_move",
     "mail_flag",
+    "mail_mark_read",
 }
 
 

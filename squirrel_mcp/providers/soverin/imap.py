@@ -486,11 +486,20 @@ class SoverinImapClient:
         return self._run(op)
 
     def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
+        return self._store(folder, uids, MailMessageFlags.FLAGGED, flagged)
+
+    def set_seen(self, folder: str, uids: List[str], seen: bool = True) -> int:
+        return self._store(folder, uids, MailMessageFlags.SEEN, seen)
+
+    def _store(self, folder: str, uids: List[str], marker: str, on: bool) -> int:
         # Deliberately a raw UID STORE rather than imap_tools' ``mb.flag``:
         # that helper follows every STORE with an EXPUNGE, which permanently
         # removes anything another client left marked \Deleted in this folder.
-        # Flagging is meant to be the one mail write you can undo, so it does
-        # not get to delete messages as a side effect.
+        # Marking is meant to be the one mail write you can undo, so it does
+        # not get to delete messages as a side effect. \Seen rides the same
+        # path for the same reason -- and because a \Deleted message another
+        # client is holding is exactly the kind of thing an inbox clean-up
+        # sweeps \Seen across.
         try:
             # Rejects anything that is not a bare uid, so a crafted argument
             # cannot smuggle extra IMAP into the STORE command below.
@@ -505,8 +514,8 @@ class SoverinImapClient:
             result = mb.client.uid(
                 "STORE",
                 ",".join(cleaned),
-                ("+" if flagged else "-") + "FLAGS",
-                f"({MailMessageFlags.FLAGGED})",
+                ("+" if on else "-") + "FLAGS",
+                f"({marker})",
             )
             try:
                 check_command_status(result, MailboxFlagError)

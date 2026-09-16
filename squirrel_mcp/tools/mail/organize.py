@@ -1,5 +1,6 @@
 """mail_move -- move messages between folders (requires confirmation).
 mail_flag -- set or clear the \\Flagged marker (no confirmation needed).
+mail_mark_read -- set or clear the \\Seen marker (no confirmation needed).
 """
 
 from __future__ import annotations
@@ -9,12 +10,12 @@ from typing import Any, Optional
 from mcp.types import ToolAnnotations
 
 from ...error_handling import ValidationError
-from ...schemas import FlagResult, MoveResult
+from ...schemas import FlagResult, MoveResult, SeenResult
 from .._common import as_str_list, require_confirm, run_blocking
 
 
 class OrganizeToolsMixin:
-    """Move messages between folders, and flag/unflag them."""
+    """Move messages between folders, flag them, and mark them read or unread."""
 
     def _register_organize_tools(self):
         @self.app.tool(
@@ -100,6 +101,63 @@ class OrganizeToolsMixin:
             return FlagResult(
                 changed=changed,
                 flagged=flagged,
+                folder=folder,
+                uids=uid_list,
+            )
+
+        @self.app.tool(
+            title="Mark Mail Read",
+            annotations=ToolAnnotations(
+                # Same shape as mail_flag, and for the same reason: \Seen is a
+                # marker, not the message, and this tool takes it straight back
+                # off again. Nothing to gate.
+                readOnlyHint=False,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=True,
+            ),
+        )
+        async def mail_mark_read(
+            uids: Any,
+            folder: str = "INBOX",
+            read: bool = True,
+            account: Optional[str] = None,
+        ) -> SeenResult:
+            """Mark one or more messages read, or put them back to unread.
+
+            Args:
+                uids: Message uids from mail_search in ``folder``. Accepts a list
+                    or a comma-separated string.
+                folder: Folder the messages live in (default "INBOX"). Must be the
+                    folder the uids came from -- a uid is only meaningful there.
+                read: True to mark them read, false to mark them unread again.
+                account: Which email account (id or address from
+                    mail_list_accounts). Omit when only one is configured.
+
+            This is the bold-or-not state every mail client shows, and it is how
+            an inbox is cleared down after a mass mailing. Reading a message with
+            mail_read does *not* set it -- what is unread stays the user's own
+            answer to "what have I not looked at yet" -- so marking is always
+            deliberate. Messages marked read come back from mail_search with
+            "\\Seen" in their ``flags``, and ``unseen_only=true`` finds the rest.
+            """
+            provider, sub = await self._get_provider(account, writes=True)
+            uid_list = as_str_list(uids)
+            if not uid_list:
+                raise ValidationError("'uids' is required (at least one message uid)")
+            # Refusing beats dropping: a backend from before this existed would
+            # otherwise report a clean sweep it never made.
+            set_seen = getattr(provider, "set_seen", None)
+            if set_seen is None:
+                raise ValidationError(
+                    "This mail account cannot change read/unread state. "
+                    "mail_flag works on it, and marks messages just as visibly."
+                )
+            changed = await run_blocking(provider, set_seen, folder, uid_list, read)
+            self._track_usage(sub, "mail_mark_read")
+            return SeenResult(
+                changed=changed,
+                read=read,
                 folder=folder,
                 uids=uid_list,
             )

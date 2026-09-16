@@ -33,6 +33,10 @@ class FakeMailProvider:
         # Uids currently carrying \Flagged, so search/fetch report what flag()
         # did and a set-then-clear round trip is actually observable.
         self.flagged: set = set()
+        # Same for \Seen, so mark-read/unread is observable through search and
+        # fetch rather than asserted on the call alone. Starts read, which is
+        # what this fake always reported before the marker was writable.
+        self.seen: set = {"101"}
         # Flipped off by a test to stand in for a backend that cannot send
         # files, which is what every backend answers by default.
         self.attachments_supported = True
@@ -85,6 +89,8 @@ class FakeMailProvider:
     ) -> Tuple[List[MessageSummary], int]:
         if flagged_only and "101" not in self.flagged:
             return [], 0
+        if unseen_only and "101" in self.seen:
+            return [], 0
         msg = MessageSummary(
             uid="101",
             folder=folder,
@@ -92,7 +98,8 @@ class FakeMailProvider:
             from_addr="Anna <anna@example.com>",
             to_addrs=["me@example.com"],
             date="Mon, 01 Jan 2026 10:00:00 +0000",
-            flags=["\\Seen"] + (["\\Flagged"] if "101" in self.flagged else []),
+            flags=(["\\Seen"] if "101" in self.seen else [])
+            + (["\\Flagged"] if "101" in self.flagged else []),
             size=1234,
             has_attachments=True,
             preview="Hi there, this is a preview.",
@@ -109,7 +116,8 @@ class FakeMailProvider:
             cc_addrs=["carol@example.com"],
             reply_to_addrs=list(self.reply_to_addrs),
             date="Mon, 01 Jan 2026 10:00:00 +0000",
-            flags=["\\Seen"] + (["\\Flagged"] if uid in self.flagged else []),
+            flags=(["\\Seen"] if uid in self.seen else [])
+            + (["\\Flagged"] if uid in self.flagged else []),
             message_id="<abc@example.com>",
             body_text="Hello world. " * 100,
             body_length=len("Hello world. " * 100),
@@ -208,6 +216,14 @@ class FakeMailProvider:
                 self.flagged.add(uid)
             else:
                 self.flagged.discard(uid)
+        return len(uids)
+
+    def set_seen(self, folder, uids, seen: bool = True) -> int:
+        for uid in uids:
+            if seen:
+                self.seen.add(uid)
+            else:
+                self.seen.discard(uid)
         return len(uids)
 
 

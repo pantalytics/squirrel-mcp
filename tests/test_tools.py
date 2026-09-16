@@ -22,6 +22,7 @@ EXPECTED_TOOLS = {
     "mail_send_draft",
     "mail_move",
     "mail_flag",
+    "mail_mark_read",
 }
 
 
@@ -160,6 +161,53 @@ async def test_search_can_narrow_to_flagged_messages(app_with_tools):
     await app_with_tools.call_tool("mail_flag", {"uids": "101", "folder": "INBOX"})
     found = await app_with_tools.call_tool("mail_search", {"flagged_only": True})
     assert "\\\\Flagged" in str(found)
+
+
+async def test_mark_read_is_a_write_but_not_destructive(app_with_tools):
+    """\\Seen is the same kind of marker as \\Flagged: reversible by the same
+    tool, so it announces itself the same way and needs no confirm= either."""
+    tools = {t.name: t for t in await app_with_tools.list_tools()}
+    mark = tools["mail_mark_read"]
+    assert mark.annotations.readOnlyHint is False
+    assert mark.annotations.destructiveHint is False
+    assert mark.annotations.idempotentHint is True
+    assert "confirm" not in mark.inputSchema.get("properties", {})
+
+
+async def test_mark_unread_round_trip_shows_up_in_search(app_with_tools, fake_provider):
+    """Both directions, because clearing \\Seen is the half a mail client
+    gives you and the inbox clean-up needs to be able to take back."""
+    await app_with_tools.call_tool(
+        "mail_mark_read", {"uids": "101", "folder": "INBOX", "read": False}
+    )
+    assert fake_provider.seen == set()
+    assert "\\\\Seen" not in str(await app_with_tools.call_tool("mail_search", {}))
+    # And the unread filter now finds it, which is what "clear the inbox" means.
+    assert "'total': 1" in str(
+        await app_with_tools.call_tool("mail_search", {"unseen_only": True})
+    )
+
+    await app_with_tools.call_tool("mail_mark_read", {"uids": ["101"], "folder": "INBOX"})
+    assert fake_provider.seen == {"101"}
+    assert "\\\\Seen" in str(await app_with_tools.call_tool("mail_search", {}))
+
+
+async def test_mark_read_requires_at_least_one_uid(app_with_tools, fake_provider):
+    with pytest.raises(Exception) as exc:
+        await app_with_tools.call_tool("mail_mark_read", {"uids": "", "folder": "INBOX"})
+    assert "uids" in str(exc.value)
+    assert fake_provider.seen == {"101"}
+
+
+async def test_a_backend_without_set_seen_is_refused_not_ignored(
+    app_with_tools, fake_provider, monkeypatch
+):
+    """Refusing beats dropping: a backend predating the marker would otherwise
+    report a clean sweep it never made."""
+    monkeypatch.delattr(type(fake_provider), "set_seen")
+    with pytest.raises(Exception) as exc:
+        await app_with_tools.call_tool("mail_mark_read", {"uids": "101"})
+    assert "read/unread" in str(exc.value)
 
 
 async def test_flag_requires_at_least_one_uid(app_with_tools, fake_provider):

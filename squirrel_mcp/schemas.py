@@ -204,6 +204,16 @@ class FlagResult(BaseModel):
     uids: List[str] = Field(default_factory=list)
 
 
+class SeenResult(BaseModel):
+    changed: int = Field(
+        description="Number of messages the read/unread change was applied to "
+        "(a uid no longer in the folder is skipped)"
+    )
+    read: bool = Field(description="True if the messages were marked read, false if unread")
+    folder: str
+    uids: List[str] = Field(default_factory=list)
+
+
 # ===================== Calendar (CalDAV) =====================
 
 

@@ -130,7 +130,9 @@ class QueryToolsMixin:
                     mail_list_folders.
                 limit: Page size. Defaults to the server default, capped at the max.
                 offset: Number of messages to skip (for paging).
-                unseen_only: If true, only unread messages.
+                unseen_only: If true, only unread messages -- what is left
+                    after a mail_mark_read sweep, and what "clean up my inbox"
+                    works through.
                 flagged_only: If true, only messages carrying the \\Flagged
                     marker (set with mail_flag). This is the way to answer
                     "what have I flagged" -- the server does the filtering, so

@@ -42,6 +42,7 @@ is configured.
 | `mail_send_draft` | Send a draft that already exists, then take it out of Drafts — **requires `confirm=true`** | ⚠️ outgoing |
 | `mail_move` | Move messages between folders — **requires `confirm=true`** | ⚠️ mutating |
 | `mail_flag` | Flag / unflag messages — the star, `flagged=false` clears it | reversible |
+| `mail_mark_read` | Mark messages read / unread, `read=false` clears it | reversible |
 
 Drafting and sending are the other two halves: `mail_draft` writes the message,
 the user reads it, and `mail_send_draft` puts *that* message on the wire and
@@ -49,9 +50,12 @@ removes it from Drafts. It takes a uid and nothing else on purpose — a draft i
 already a complete message, so re-typing its text into `mail_send` would send a
 second, subtly different one and leave the reviewed draft behind.
 
-Flagging and finding are two halves of one thing: `mail_flag` sets the marker,
-`mail_search(flagged_only=true)` gets those messages back — filtered by the
-server, not by paging a folder.
+Marking and finding are two halves of one thing: `mail_flag` sets the star and
+`mail_search(flagged_only=true)` gets those messages back; `mail_mark_read`
+sets the read state and `mail_search(unseen_only=true)` gets back what is left
+— filtered by the server, not by paging a folder. Reading a message with
+`mail_read` does *not* mark it read, so "what I have not looked at yet" stays
+yours to answer.
 
 **Attachments** go both ways. `mail_read` lists them and `mail_get_attachment`
 downloads one; sending takes an `attachments` list on `mail_send`, `mail_draft`
