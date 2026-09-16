@@ -65,13 +65,21 @@ Mail tools (all prefixed `mail_`):
   you ask the user to approve a send: a file leaving the mailbox is as much a
   decision as the recipient is. Editing a draft leaves its existing attachments
   alone unless you pass the argument.
-- EMBEDDING AN IMAGE in the message rather than hanging it off: pass `body_html`
-  alongside `body` (the plain text stays, and is what a client without HTML
-  shows), mark the attachment `"inline": true` with a `"content_id"`, and refer
-  to it from the HTML as `<img src="cid:that-id">`. The reference is what makes
-  it show; an inline file with no HTML pointing at it simply arrives as an
-  ordinary attachment. Use it for signatures and screenshots that belong in the
-  flow of the text, not to dress up a message the user asked to keep plain.
+- PLAIN TEXT OR HTML is one argument, `body_format`, on mail_send,
+  mail_create_draft and mail_edit_draft. It defaults to `text` and that is the
+  right default: write the message in `body` and leave it alone. Pass
+  `body_format="html"` and `body` is HTML instead -- the plain-text half of the
+  message is derived from it, so you never write the same mail twice and the
+  two halves cannot drift apart. Choose html when the content needs it (a link
+  the user should see as a link, a list, an embedded image), not to dress up a
+  message the user asked to keep plain. Editing a draft rewrites the format
+  along with the rest, so re-pass `"html"` for a draft that had an HTML body.
+- EMBEDDING AN IMAGE in the message rather than hanging it off needs
+  `body_format="html"`: mark the attachment `"inline": true` with a
+  `"content_id"` and refer to it from the HTML as `<img src="cid:that-id">`.
+  The reference is what makes it show; an inline file with a plain-text body
+  simply arrives as an ordinary attachment. Use it for signatures and
+  screenshots that belong in the flow of the text.
 - REPLYING is not the same as sending: whenever the user is answering a message
   they just read, pass that message's uid as `reply_to_uid` (plus the
   `reply_to_folder` it lives in) to mail_send or mail_create_draft. Only that puts the

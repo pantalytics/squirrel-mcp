@@ -63,3 +63,4 @@ squirrel_mcp/admin/
 # Competitor screenshots kept locally for reference only (which mail providers
 # and IMAP/SMTP settings to support). Never publish these -- this repo is public.
 imapmcp/
+uv.lock

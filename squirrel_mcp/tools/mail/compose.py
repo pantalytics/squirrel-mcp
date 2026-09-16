@@ -29,7 +29,14 @@ from mcp.types import ToolAnnotations
 
 from ...error_handling import ValidationError
 from ...schemas import DraftResult, SendResult
-from .._common import as_str_list, bare_addresses, reply_subject, require_confirm, run_blocking
+from .._common import (
+    as_bodies,
+    as_str_list,
+    bare_addresses,
+    reply_subject,
+    require_confirm,
+    run_blocking,
+)
 from .attachments import resolve_attachments
 
 
@@ -93,7 +100,7 @@ class ComposeToolsMixin:
             reply_to_folder: str = "INBOX",
             reply_all: bool = False,
             attachments: Optional[Any] = None,
-            body_html: Optional[str] = None,
+            body_format: str = "text",
             account: Optional[str] = None,
         ) -> DraftResult:
             """Save a new draft to the Drafts folder (nothing is sent).
@@ -116,16 +123,23 @@ class ComposeToolsMixin:
             bytes you supply. ALWAYS prefer the first form when forwarding
             something the user received -- it copies nothing through you.
 
-            EMBEDDING AN IMAGE: pass ``body_html`` (the rich version of the
-            same message -- ``body`` stays the plain text and is still what a
-            plain-text client shows) and mark the attachment ``"inline": true``
-            with a ``"content_id"``, then refer to it from the HTML as
-            ``<img src="cid:that-id">``. Without an HTML body pointing at it,
-            an inline file simply arrives as an ordinary attachment.
+            FORMAT: ``body`` is plain text unless ``body_format="html"``, in
+            which case ``body`` *is* the HTML and the plain-text half of the
+            message is derived from it -- so you write the message once, in
+            whichever form suits it. Default to text; reach for html when the
+            content needs it (a link the user should see as a link, a list, an
+            embedded image), not to decorate a message the user asked to keep
+            plain.
+
+            EMBEDDING AN IMAGE: needs ``body_format="html"``. Mark the
+            attachment ``"inline": true`` with a ``"content_id"`` and refer to
+            it from the HTML as ``<img src="cid:that-id">``. With a plain-text
+            body an inline file simply arrives as an ordinary attachment.
             """
             provider, sub = await self._get_provider(account, writes=True)
             if body is None:
                 raise ValidationError("'body' is required")
+            body, html_body = as_bodies(body, body_format)
             files = await resolve_attachments(
                 provider, attachments, default_folder=reply_to_folder
             )
@@ -158,7 +172,7 @@ class ComposeToolsMixin:
                 reply_to_uid=reply_to_uid,
                 reply_to_folder=reply_to_folder,
                 attachments=files,
-                body_html=body_html,
+                body_html=html_body,
             )
             self._track_usage(sub, "mail_create_draft")
             return DraftResult(
@@ -190,7 +204,7 @@ class ComposeToolsMixin:
             bcc: Optional[Any] = None,
             folder: str = "Drafts",
             attachments: Optional[Any] = None,
-            body_html: Optional[str] = None,
+            body_format: str = "text",
             account: Optional[str] = None,
         ) -> DraftResult:
             """Replace an existing draft with new content. Returns the new uid.
@@ -203,13 +217,14 @@ class ComposeToolsMixin:
             ATTACHMENTS: omit the argument and whatever the draft already
             carries is kept -- fixing a typo does not drop the file. Pass a list
             (same shape as mail_create_draft) to replace them, or [] to strip them.
-            ``body_html`` is rewritten like the rest of the draft, so re-pass
-            it when editing a message that had one.
+            ``body_format`` is rewritten like the rest of the draft, so
+            re-pass ``"html"`` when editing a message that had an HTML body.
             """
             provider, sub = await self._get_provider(account, writes=True)
             recipients = as_str_list(to)
             if not recipients:
                 raise ValidationError("'to' is required (at least one recipient)")
+            body, html_body = as_bodies(body, body_format)
             # None and [] mean different things here, so the resolve is
             # conditional: omitted keeps the draft's own files, [] clears them.
             files = (
@@ -228,7 +243,7 @@ class ComposeToolsMixin:
                 cc=as_str_list(cc),
                 bcc=as_str_list(bcc),
                 attachments=files,
-                body_html=body_html,
+                body_html=html_body,
             )
             self._track_usage(sub, "mail_edit_draft")
             return DraftResult(
@@ -324,7 +339,7 @@ class ComposeToolsMixin:
             reply_to_folder: str = "INBOX",
             reply_all: bool = False,
             attachments: Optional[Any] = None,
-            body_html: Optional[str] = None,
+            body_format: str = "text",
             confirm: bool = False,
             account: Optional[str] = None,
         ) -> SendResult:
@@ -354,12 +369,18 @@ class ComposeToolsMixin:
             user received. Name every attachment in the approval you ask for --
             a file leaving the mailbox is as much a decision as the recipient.
 
-            EMBEDDING AN IMAGE: pass ``body_html`` (the rich version of the
-            same message -- ``body`` stays the plain text and is still what a
-            plain-text client shows) and mark the attachment ``"inline": true``
-            with a ``"content_id"``, then refer to it from the HTML as
-            ``<img src="cid:that-id">``. Without an HTML body pointing at it,
-            an inline file simply arrives as an ordinary attachment.
+            FORMAT: ``body`` is plain text unless ``body_format="html"``, in
+            which case ``body`` *is* the HTML and the plain-text half of the
+            message is derived from it -- so you write the message once, in
+            whichever form suits it. Default to text; reach for html when the
+            content needs it (a link the user should see as a link, a list, an
+            embedded image), not to decorate a message the user asked to keep
+            plain.
+
+            EMBEDDING AN IMAGE: needs ``body_format="html"``. Mark the
+            attachment ``"inline": true`` with a ``"content_id"`` and refer to
+            it from the HTML as ``<img src="cid:that-id">``. With a plain-text
+            body an inline file simply arrives as an ordinary attachment.
 
             THE COPY IN SENT: ``saved_to_sent`` says whether the message was
             also filed in the account's Sent folder (``sent_folder`` names it).
@@ -369,6 +390,7 @@ class ComposeToolsMixin:
             provider, sub = await self._get_provider(account, writes=True)
             if body is None:
                 raise ValidationError("'body' is required")
+            body, html_body = as_bodies(body, body_format)
             # Resolved before the confirm gate: a wrong uid or bad base64 must
             # fail as a validation error while nothing has been sent, not after.
             files = await resolve_attachments(
@@ -403,7 +425,7 @@ class ComposeToolsMixin:
                 reply_to_uid=reply_to_uid,
                 reply_to_folder=reply_to_folder,
                 attachments=files,
-                body_html=body_html,
+                body_html=html_body,
             )
             self._track_usage(sub, "mail_send")
             return SendResult(

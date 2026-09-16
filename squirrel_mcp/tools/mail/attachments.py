@@ -15,8 +15,8 @@ Two ways to name a file, and the choice between them is the whole design here.
 
 Either form takes ``"inline": true`` (plus an optional ``"content_id"``) to
 embed an image in the body rather than hang it off the message. That only
-renders against a ``body_html`` referring to the part as ``cid:<id>``; without
-one it stays an ordinary attachment, which is the honest outcome rather than a
+renders against a ``body_format="html"`` body referring to the part as
+``cid:<id>``; with a plain-text body it stays an ordinary attachment, which is the honest outcome rather than a
 ``multipart/related`` nothing points into.
 
 There is deliberately **no file path**. In the local single-mailbox deployment
