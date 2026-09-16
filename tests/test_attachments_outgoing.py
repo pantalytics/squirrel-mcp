@@ -250,7 +250,7 @@ async def test_send_refuses_a_bad_attachment_before_anything_leaves(app_with_too
 
 async def test_draft_carries_attachments_too(app_with_tools, fake_provider):
     await app_with_tools.call_tool(
-        "mail_draft",
+        "mail_create_draft",
         {"to": "a@b.com", "subject": "s", "body": "b",
          "attachments": [{"source_uid": "101", "source_index": 0}]},
     )
@@ -278,7 +278,7 @@ async def test_editing_a_draft_with_an_empty_list_strips_them(app_with_tools, fa
 
 async def test_the_tools_advertise_the_argument(app_with_tools):
     tools = {t.name: t for t in await app_with_tools.list_tools()}
-    for name in ("mail_send", "mail_draft", "mail_edit_draft"):
+    for name in ("mail_send", "mail_create_draft", "mail_edit_draft"):
         assert "attachments" in tools[name].inputSchema["properties"]
 
 

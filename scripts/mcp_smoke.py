@@ -20,7 +20,7 @@ EXPECTED_TOOLS = {
     "mail_read",
     "mail_read_chunk",
     "mail_get_attachment",
-    "mail_draft",
+    "mail_create_draft",
     "mail_edit_draft",
     "mail_send",
     "mail_send_draft",

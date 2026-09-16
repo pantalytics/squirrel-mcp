@@ -6,7 +6,7 @@ tools require ``confirm=true``.
 
 CalDAV is one backend, not the only one, and the two things a *meeting* needs
 beyond an appointment -- inviting people and having somewhere to meet -- are the
-place that shows. Both are asked for on ``calendar_create_event`` and both are
+place that shows. Both are asked for on ``calendar_create`` and both are
 gated on a capability the provider declares (``supports_attendees`` /
 ``supports_online_meeting``, read with ``getattr`` so a backend predating them
 answers no). A backend that cannot do it is told so plainly, in the same breath
@@ -88,7 +88,7 @@ class CalendarToolHandler:
             )
 
         @self.app.tool(title="Search Events", annotations=_READ)
-        async def calendar_search_events(
+        async def calendar_search(
             calendar: str,
             start: Optional[str] = None,
             end: Optional[str] = None,
@@ -106,17 +106,17 @@ class CalendarToolHandler:
                 provider, provider.search_events, calendar,
                 start=start, end=end, query=query, limit=eff_limit,
             )
-            self._track_usage(sub, "calendar_search_events")
+            self._track_usage(sub, "calendar_search")
             return EventList(
                 events=[_event_out(e) for e in events], count=len(events), calendar=calendar
             )
 
         @self.app.tool(title="Read Event", annotations=_READ)
-        async def calendar_read_event(calendar: str, uid: str) -> EventDetailOut:
+        async def calendar_read(calendar: str, uid: str) -> EventDetailOut:
             """Read one event by uid."""
             provider, sub = await self._get_provider()
             e = await run_blocking(provider, provider.get_event, calendar, uid)
-            self._track_usage(sub, "calendar_read_event")
+            self._track_usage(sub, "calendar_read")
             return EventDetailOut(
                 uid=e.uid, calendar=e.calendar, summary=e.summary, start=e.start, end=e.end,
                 all_day=e.all_day, location=e.location, description=e.description,
@@ -125,7 +125,7 @@ class CalendarToolHandler:
             )
 
         @self.app.tool(title="Create Event", annotations=_WRITE)
-        async def calendar_create_event(
+        async def calendar_create(
             calendar: str,
             summary: str,
             start: str,
@@ -154,7 +154,7 @@ class CalendarToolHandler:
                 all_day=all_day, location=location, description=description,
                 attendees=invitees, online_meeting=online_meeting,
             )
-            self._track_usage(sub, "calendar_create_event")
+            self._track_usage(sub, "calendar_create")
             join_url = (
                 await self._join_url(provider, calendar, uid) if online_meeting else None
             )
@@ -166,7 +166,7 @@ class CalendarToolHandler:
             )
 
         @self.app.tool(title="Update Event", annotations=_WRITE)
-        async def calendar_update_event(
+        async def calendar_update(
             calendar: str,
             uid: str,
             summary: Optional[str] = None,
@@ -183,18 +183,18 @@ class CalendarToolHandler:
                 provider, provider.update_event, calendar, uid,
                 summary=summary, start=start, end=end, location=location, description=description,
             )
-            self._track_usage(sub, "calendar_update_event")
+            self._track_usage(sub, "calendar_update")
             return EventWriteResult(uid=new_uid, calendar=calendar, status="Event updated")
 
         @self.app.tool(title="Delete Event", annotations=_WRITE)
-        async def calendar_delete_event(
+        async def calendar_delete(
             calendar: str, uid: str, confirm: bool = False
         ) -> EventWriteResult:
             """Delete an event. Requires confirm=true."""
             provider, sub = await self._get_provider(writes=True)
             require_confirm(confirm, "Deleting an event")
             await run_blocking(provider, provider.delete_event, calendar, uid)
-            self._track_usage(sub, "calendar_delete_event")
+            self._track_usage(sub, "calendar_delete")
             return EventWriteResult(uid=uid, calendar=calendar, status="Event deleted")
 
 

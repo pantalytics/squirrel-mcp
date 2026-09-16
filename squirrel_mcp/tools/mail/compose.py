@@ -1,4 +1,4 @@
-"""mail_draft, mail_edit_draft, mail_send, mail_send_draft.
+"""mail_create_draft, mail_edit_draft, mail_send, mail_send_draft.
 
 Replying: three of these take a ``reply_to_uid``. It does two separate jobs,
 and they live in different places on purpose.
@@ -82,7 +82,7 @@ class ComposeToolsMixin:
                 openWorldHint=True,
             ),
         )
-        async def mail_draft(
+        async def mail_create_draft(
             to: Optional[Any] = None,
             subject: Optional[str] = None,
             body: Optional[str] = None,
@@ -160,7 +160,7 @@ class ComposeToolsMixin:
                 attachments=files,
                 body_html=body_html,
             )
-            self._track_usage(sub, "mail_draft")
+            self._track_usage(sub, "mail_create_draft")
             return DraftResult(
                 uid=uid,
                 folder=folder,
@@ -198,11 +198,11 @@ class ComposeToolsMixin:
             (The draft is rewritten, so the uid changes -- use the returned one.)
             Pass the same ``account`` the draft was created in. A draft created
             as a reply stays in its thread; to turn an ordinary draft into a
-            reply, save a new one with mail_draft's ``reply_to_uid``.
+            reply, save a new one with mail_create_draft's ``reply_to_uid``.
 
             ATTACHMENTS: omit the argument and whatever the draft already
             carries is kept -- fixing a typo does not drop the file. Pass a list
-            (same shape as mail_draft) to replace them, or [] to strip them.
+            (same shape as mail_create_draft) to replace them, or [] to strip them.
             ``body_html`` is rewritten like the rest of the draft, so re-pass
             it when editing a message that had one.
             """
@@ -266,7 +266,7 @@ class ComposeToolsMixin:
             ``folder``. Do NOT re-send the same text through mail_send instead:
             that composes a second message and leaves the draft behind.
 
-            ``uid`` is the draft's uid, as returned by mail_draft /
+            ``uid`` is the draft's uid, as returned by mail_create_draft /
             mail_edit_draft or found with mail_search in the Drafts folder.
             Pass the same ``account`` the draft lives in.
 

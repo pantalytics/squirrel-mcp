@@ -1,4 +1,4 @@
-"""Attendees and online meetings on ``calendar_create_event``.
+"""Attendees and online meetings on ``calendar_create``.
 
 The two things that separate a meeting from an appointment -- people to invite
 and somewhere to meet -- are the first calendar features no CalDAV server can
@@ -114,7 +114,7 @@ async def test_attendees_are_refused_by_a_backend_that_cannot_invite():
     provider = FakeCalendarProvider(attendees=False)
     with pytest.raises(Exception) as exc:
         await _app(provider).call_tool(
-            "calendar_create_event", {**CREATE, "attendees": ["a@example.com"]}
+            "calendar_create", {**CREATE, "attendees": ["a@example.com"]}
         )
     assert "invitation" in str(exc.value).lower()
     assert provider.created == []  # and no event either way
@@ -124,7 +124,7 @@ async def test_an_online_meeting_is_refused_by_a_backend_that_mints_none():
     provider = FakeCalendarProvider(online=False)
     with pytest.raises(Exception) as exc:
         await _app(provider).call_tool(
-            "calendar_create_event", {**CREATE, "online_meeting": True}
+            "calendar_create", {**CREATE, "online_meeting": True}
         )
     assert "online meeting" in str(exc.value).lower()
     assert provider.created == []
@@ -145,7 +145,7 @@ async def test_a_backend_predating_the_capabilities_answers_no():
 
     with pytest.raises(Exception) as exc:
         await _app(provider).call_tool(
-            "calendar_create_event", {**CREATE, "attendees": ["a@example.com"]}
+            "calendar_create", {**CREATE, "attendees": ["a@example.com"]}
         )
     assert "invitation" in str(exc.value).lower()
     assert provider.created == []
@@ -154,7 +154,7 @@ async def test_a_backend_predating_the_capabilities_answers_no():
 async def test_a_plain_event_still_works_on_a_backend_that_can_do_neither():
     """The gate is on the meeting half only; an appointment is unaffected."""
     provider = FakeCalendarProvider()
-    await _app(provider).call_tool("calendar_create_event", CREATE)
+    await _app(provider).call_tool("calendar_create", CREATE)
     assert provider.created == [
         {
             "all_day": False,
@@ -170,7 +170,7 @@ async def test_a_plain_event_still_works_on_a_backend_that_can_do_neither():
 async def test_attendees_reach_the_provider_and_the_result_says_so():
     provider = FakeCalendarProvider(attendees=True)
     result = await _app(provider).call_tool(
-        "calendar_create_event",
+        "calendar_create",
         {**CREATE, "attendees": ["a@example.com", "b@example.com"]},
     )
     assert provider.created[0]["attendees"] == ["a@example.com", "b@example.com"]
@@ -189,14 +189,14 @@ async def test_attendees_may_arrive_the_way_recipients_do(sent, expected):
     """A bare address or a comma-separated string, the shapes an MCP client
     actually sends -- normalised by the same helper mail recipients use."""
     provider = FakeCalendarProvider(attendees=True)
-    await _app(provider).call_tool("calendar_create_event", {**CREATE, "attendees": sent})
+    await _app(provider).call_tool("calendar_create", {**CREATE, "attendees": sent})
     assert provider.created[0]["attendees"] == expected
 
 
 async def test_attendees_are_trimmed_and_deduped_case_insensitively():
     provider = FakeCalendarProvider(attendees=True)
     await _app(provider).call_tool(
-        "calendar_create_event",
+        "calendar_create",
         {**CREATE, "attendees": [" a@example.com ", "A@Example.com", ""]},
     )
     assert provider.created[0]["attendees"] == ["a@example.com"]
@@ -206,7 +206,7 @@ async def test_something_that_is_not_an_address_is_refused():
     provider = FakeCalendarProvider(attendees=True)
     with pytest.raises(Exception) as exc:
         await _app(provider).call_tool(
-            "calendar_create_event", {**CREATE, "attendees": ["Anna Jansen"]}
+            "calendar_create", {**CREATE, "attendees": ["Anna Jansen"]}
         )
     assert "not an email address" in str(exc.value).lower()
     assert provider.created == []
@@ -216,7 +216,7 @@ async def test_an_online_meeting_comes_back_with_its_join_link():
     """The link is the deliverable: an event nobody can join is half an answer."""
     provider = FakeCalendarProvider(attendees=True, online=True)
     result = await _app(provider).call_tool(
-        "calendar_create_event",
+        "calendar_create",
         {**CREATE, "attendees": ["a@example.com"], "online_meeting": True},
     )
     assert provider.created[0]["online_meeting"] is True
@@ -228,7 +228,7 @@ async def test_a_read_back_that_fails_does_not_fail_the_creation():
     provider = FakeCalendarProvider(online=True)
     provider.read_fails = True
     result = await _app(provider).call_tool(
-        "calendar_create_event", {**CREATE, "online_meeting": True}
+        "calendar_create", {**CREATE, "online_meeting": True}
     )
     assert provider.created[0]["online_meeting"] is True
     assert "Event created" in str(result)
@@ -239,7 +239,7 @@ async def test_creating_still_needs_confirmation():
     provider = FakeCalendarProvider(attendees=True)
     with pytest.raises(Exception) as exc:
         await _app(provider).call_tool(
-            "calendar_create_event",
+            "calendar_create",
             {**{k: v for k, v in CREATE.items() if k != "confirm"},
              "attendees": ["a@example.com"]},
         )
@@ -251,6 +251,6 @@ async def test_reading_an_event_reports_its_join_link():
     provider = FakeCalendarProvider(online=True)
     provider.join_url = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_y"
     result = await _app(provider).call_tool(
-        "calendar_read_event", {"calendar": "cal-1", "uid": "evt-1"}
+        "calendar_read", {"calendar": "cal-1", "uid": "evt-1"}
     )
     assert "meetup-join" in str(result)

@@ -252,7 +252,7 @@ class CalendarList(BaseModel):
 
 
 class EventOut(BaseModel):
-    uid: str = Field(description="Event id; pass to calendar_read_event")
+    uid: str = Field(description="Event id; pass to calendar_read")
     calendar: str
     summary: str
     start: Optional[str] = Field(default=None, description="ISO 8601 start")
