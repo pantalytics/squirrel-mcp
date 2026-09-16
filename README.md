@@ -41,6 +41,7 @@ is configured.
 | `mail_send` | Send a message, attachments included — **requires `confirm=true`** | ⚠️ outgoing |
 | `mail_send_draft` | Send a draft that already exists, then take it out of Drafts — **requires `confirm=true`** | ⚠️ outgoing |
 | `mail_move` | Move messages between folders — **requires `confirm=true`** | ⚠️ mutating |
+| `mail_delete` | The delete key: move to the account's own Trash — **requires `confirm=true`** | ⚠️ mutating |
 | `mail_flag` | Flag / unflag messages — the star, `flagged=false` clears it | reversible |
 | `mail_mark_read` | Mark messages read / unread, `read=false` clears it | reversible |
 
@@ -56,6 +57,16 @@ sets the read state and `mail_search(unseen_only=true)` gets back what is left
 — filtered by the server, not by paging a folder. Reading a message with
 `mail_read` does *not* mark it read, so "what I have not looked at yet" stays
 yours to answer.
+
+**Archiving and deleting** both come down to which folder, and the folder's
+name is not something a client can know — a Dutch mailbox archives into
+"Archief" and bins into "Prullenbak". So `mail_list_folders` reports each
+folder's `role` (`sent`, `trash`, `archive`, `junk`, `drafts`) straight off the
+server's SPECIAL-USE attributes: archiving is `mail_move` to the folder with
+role `archive`, and putting it back is the same move reversed. `mail_delete`
+needs no destination at all — it finds the Trash itself and tells you where the
+message went. It is the delete key, not an erase: nothing is expunged, so
+`mail_move` brings it back.
 
 **Attachments** go both ways. `mail_read` lists them and `mail_get_attachment`
 downloads one; sending takes an `attachments` list on `mail_send`, `mail_draft`

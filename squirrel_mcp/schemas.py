@@ -26,6 +26,17 @@ class FolderInfo(BaseModel):
     name: str = Field(description="Folder / mailbox name (use this as the 'folder' arg)")
     delimiter: str = Field(description="Hierarchy delimiter used by the server")
     flags: List[str] = Field(default_factory=list, description="IMAP folder flags")
+    role: Optional[str] = Field(
+        default=None,
+        description=(
+            "What this folder is FOR, when the server says so: sent, trash, "
+            "archive, junk or drafts. Read from the folder's SPECIAL-USE "
+            "attribute, so it is right on a server whose names are localized "
+            "-- 'Archief' comes back with role 'archive'. Use it instead of "
+            "guessing an English name: to archive something, move it to the "
+            "folder whose role is 'archive'. Null on an ordinary folder."
+        ),
+    )
 
 
 class FolderList(BaseModel):
@@ -191,6 +202,19 @@ class MoveResult(BaseModel):
     moved: int = Field(description="Number of messages moved")
     source_folder: str
     destination_folder: str
+    uids: List[str] = Field(default_factory=list)
+
+
+class DeleteResult(BaseModel):
+    deleted: int = Field(description="Number of messages thrown away")
+    source_folder: str
+    trash_folder: str = Field(
+        description=(
+            "Where they went. They are NOT erased -- this is the delete key, "
+            "not an empty-trash. Name this folder to the user: it is where "
+            "they get the message back from, and mail_move brings it back."
+        )
+    )
     uids: List[str] = Field(default_factory=list)
 
 

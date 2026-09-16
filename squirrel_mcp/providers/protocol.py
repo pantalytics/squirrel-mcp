@@ -50,6 +50,42 @@ class MailNotFoundError(ProviderNotFoundError, MailProviderError):
     """A requested folder, message or attachment does not exist."""
 
 
+# The SPECIAL-USE attributes (RFC 6154) a server puts on the folders it means
+# as Sent, Trash, Archive, Junk and Drafts. Asking for them is the whole reason
+# not to hardcode a name: the sent folder is "Sent Messages" on one host,
+# "Verzonden items" on a Dutch Exchange and "INBOX.Sent" wherever INBOX is the
+# namespace root, and every one of those answers to one flag. The same is true
+# of the other four -- "Prullenbak", "Archief", "Spam" -- which is why this
+# started as the Sent lookup and became a table rather than being copied four
+# times.
+#
+# The value is the fallback used when a server advertises nothing: the name
+# IMAP clients have defaulted to for decades. A wrong fallback fails loudly on
+# the next command rather than quietly filing mail where nobody looks.
+SPECIAL_USE_FOLDERS = {
+    "sent": ("\\sent", "Sent"),
+    "trash": ("\\trash", "Trash"),
+    "archive": ("\\archive", "Archive"),
+    "junk": ("\\junk", "Junk"),
+    "drafts": ("\\drafts", "Drafts"),
+}
+
+
+def folder_role(flags) -> Optional[str]:
+    """Which of the five special roles a folder's LIST flags claim, if any.
+
+    The reverse of the table above, and the thing the tool layer reports: a
+    caller that has been told "Archief is the archive" never has to guess a
+    localized name, which is what ``mail_move(destination="Archive")`` was
+    doing every time it was asked to file something away.
+    """
+    lowered = {str(f).lower() for f in flags or []}
+    for role, (attribute, _fallback) in SPECIAL_USE_FOLDERS.items():
+        if attribute in lowered:
+            return role
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Transport-neutral value objects.
 # --------------------------------------------------------------------------- #
@@ -360,6 +396,27 @@ class MailProvider(Protocol):
 
     def move(self, folder: str, uids: List[str], destination: str) -> int:
         """Move messages from ``folder`` to ``destination``. Returns count moved."""
+        ...
+
+    def delete(self, folder: str, uids: List[str]) -> Tuple[int, str]:
+        """Throw messages away. Returns (count deleted, the folder they went to).
+
+        **This is a mail client's delete key, not an erase.** Every backend
+        files the messages in whatever it calls Trash, where the user can still
+        get them back -- which is the "could the user not get this back" line
+        the rest of this package draws. An implementation that permanently
+        removed them would be answering a different question than the one the
+        tool asked, and the tool has no way to tell.
+
+        The destination is the backend's to find, not the caller's to name --
+        it is localized ("Prullenbak"), sometimes under INBOX, and IMAP
+        advertises it as the ``\\Trash`` SPECIAL-USE attribute (RFC 6154)
+        exactly as it advertises ``\\Sent``. Returning the name is how the
+        tool tells the user where to look.
+
+        Read through ``getattr(provider, "delete", None)``, so a backend
+        written before this refuses clearly rather than crashing.
+        """
         ...
 
     def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:

@@ -1,4 +1,10 @@
-"""mail_list_accounts, mail_list_folders."""
+"""mail_list_accounts, mail_list_folders.
+
+A folder's ``role`` is the one thing here that is not just a passthrough. The
+names are localized and a caller cannot know them, so "move it to Archive" was
+a guess that failed on every non-English mailbox; the server already says which
+folder it means as the archive (RFC 6154 SPECIAL-USE), and this reports it.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +12,7 @@ from typing import Optional
 
 from mcp.types import ToolAnnotations
 
+from ...providers.protocol import folder_role
 from ...schemas import FolderInfo, FolderList, MailAccount, MailAccountList
 from .._common import run_blocking
 
@@ -59,6 +66,13 @@ class FoldersToolsMixin:
             ``folder`` argument of the other tools (e.g. "INBOX", "Drafts",
             "Archive", "Sent").
 
+            Each folder carries a ``role`` when the server declares one: sent,
+            trash, archive, junk or drafts. USE IT rather than guessing an
+            English name -- a Dutch mailbox archives into "Archief" and files
+            sent mail in "Verzonden items", and the role is how you know which
+            is which. To archive a message, move it to the folder whose role is
+            "archive"; to put an archived one back, move it to INBOX.
+
             Args:
                 account: Which email account to use (id or address from
                     mail_list_accounts). Omit when only one is configured.
@@ -68,7 +82,12 @@ class FoldersToolsMixin:
             self._track_usage(sub, "mail_list_folders")
             return FolderList(
                 folders=[
-                    FolderInfo(name=f.name, delimiter=f.delimiter, flags=f.flags)
+                    FolderInfo(
+                        name=f.name,
+                        delimiter=f.delimiter,
+                        flags=f.flags,
+                        role=folder_role(f.flags),
+                    )
                     for f in folders
                 ]
             )

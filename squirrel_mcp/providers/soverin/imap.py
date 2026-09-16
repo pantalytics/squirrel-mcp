@@ -31,6 +31,7 @@ from imap_tools.utils import check_command_status, clean_uids
 from ...logging_config import get_logger
 from ...search_query import MailQuery, parse
 from ..protocol import (
+    SPECIAL_USE_FOLDERS,
     AttachmentInfo,
     AttachmentPayload,
     FolderInfo,
@@ -52,18 +53,10 @@ _CONNECTION_ERRORS = (imaplib.IMAP4.abort, OSError, ConnectionError, EOFError)
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
-# The SPECIAL-USE attribute (RFC 6154) a server puts on the folder it means as
-# "Sent". Asking for it is the whole reason not to hardcode a name: the folder
-# is "Sent Messages" on one host, "Verzonden items" on a Dutch Exchange and
-# "INBOX.Sent" wherever INBOX is the namespace root, and every one of those
-# answers to this one flag.
-SENT_SPECIAL_USE = "\\sent"
-
-# What to append to when the server advertises no \Sent anywhere. "Sent" is the
-# overwhelmingly common name and the one IMAP clients have defaulted to for
-# decades -- and if it is wrong the append fails loudly into the send result
-# rather than silently filing the copy somewhere nobody looks.
-DEFAULT_SENT_FOLDER = "Sent"
+# The SPECIAL-USE names the Sent path used before the table moved to
+# ``providers.protocol`` -- kept so this module still reads as IMAP.
+SENT_SPECIAL_USE = SPECIAL_USE_FOLDERS["sent"][0]
+DEFAULT_SENT_FOLDER = SPECIAL_USE_FOLDERS["sent"][1]
 
 
 def _html_to_text(html: str) -> str:
@@ -99,7 +92,7 @@ class SoverinImapClient:
         # Resolved from LIST on first use and kept: a folder's special-use
         # attribute does not change under a running session, and a send should
         # not pay for a full folder listing every time.
-        self._sent_folder: Optional[str] = None
+        self._special: dict = {}
 
     def _ssl_context(self) -> ssl.SSLContext:
         ctx = ssl.create_default_context()
@@ -408,35 +401,46 @@ class SoverinImapClient:
         self._run(op)
 
     # ---- the copy in Sent -------------------------------------------------- #
-    def sent_folder(self) -> str:
-        """The folder this account keeps sent mail in.
+    def special_folder(self, role: str) -> str:
+        """The folder this account uses for ``role`` (see SPECIAL_USE_FOLDERS).
 
-        Read from the ``\\Sent`` SPECIAL-USE attribute in the LIST reply (RFC
-        6154) -- the same flags ``list_folders`` already hands the tool layer
-        -- because the *name* is not something a client gets to know: it is
-        localized, it sits under INBOX on some servers, and "Sent Items" and
-        "Sent Messages" are both common. A server that advertises no such
-        folder falls back to ``Sent``.
+        Read from the SPECIAL-USE attribute in the LIST reply (RFC 6154) -- the
+        same flags ``list_folders`` already hands the tool layer -- because the
+        *name* is not something a client gets to know: it is localized, it sits
+        under INBOX on some servers, and "Sent Items" and "Sent Messages" are
+        both common. A server that advertises nothing falls back to the
+        conventional English name.
         """
-        if self._sent_folder is not None:
-            return self._sent_folder
+        try:
+            attribute, fallback = SPECIAL_USE_FOLDERS[role]
+        except KeyError:
+            raise MailProviderError(
+                f"Unknown folder role {role!r}; expected one of "
+                f"{', '.join(sorted(SPECIAL_USE_FOLDERS))}"
+            ) from None
+        if role in self._special:
+            return self._special[role]
         try:
             folders = self.list_folders()
         except Exception as exc:  # noqa: BLE001 - a listing failure is not fatal
-            # Don't cache this: the next send should look again rather than be
+            # Don't cache this: the next call should look again rather than be
             # stuck with the fallback for the life of the session.
-            logger.warning("Could not list folders to find Sent (%s); assuming %s",
-                           exc, DEFAULT_SENT_FOLDER)
-            return DEFAULT_SENT_FOLDER
-        name = DEFAULT_SENT_FOLDER
+            logger.warning("Could not list folders to find %s (%s); assuming %s",
+                           role, exc, fallback)
+            return fallback
+        name = fallback
         for folder in folders:
-            if any(f.lower() == SENT_SPECIAL_USE for f in folder.flags):
+            if any(str(f).lower() == attribute for f in folder.flags):
                 name = folder.name
                 break
         else:
-            logger.info("No \\Sent folder advertised; filing sent mail in %s", name)
-        self._sent_folder = name
+            logger.info("No %s folder advertised; using %s", attribute, name)
+        self._special[role] = name
         return name
+
+    def sent_folder(self) -> str:
+        """Where sent mail is filed. The first caller of ``special_folder``."""
+        return self.special_folder("sent")
 
     def append_sent(
         self,
@@ -484,6 +488,29 @@ class SoverinImapClient:
             return len(uids)
 
         return self._run(op)
+
+    def delete(self, folder: str, uids: List[str]) -> Tuple[int, str]:
+        """Move messages to this account's Trash. Returns (count, folder name).
+
+        A mail client's delete key does not erase anything -- it files the
+        message in Trash, where the user can get it back. That is the line this
+        package draws everywhere else ("could the user not get this back"), so
+        it is the line here too: there is deliberately no expunge, and no
+        ``\\Deleted`` flag either, since the one thing this must not do is
+        make another client's pending deletions disappear the next time
+        something expunges the folder.
+
+        Deleting out of Trash is asked for as a move like any other, and is the
+        only way to get closer to gone than this.
+        """
+        target = self.special_folder("trash")
+        if folder == target:
+            raise MailProviderError(
+                f"These messages are already in {target}. Emptying the trash is "
+                f"not something this server does for you -- move them somewhere "
+                f"else, or delete them in your mail client."
+            )
+        return self.move(folder, uids, target), target
 
     def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
         return self._store(folder, uids, MailMessageFlags.FLAGGED, flagged)
