@@ -740,3 +740,81 @@ def test_archiving_uses_the_folder_the_server_flags(provider):
     assert p.move("INBOX", [target.uid], archive) == 1
     filed, _ = p.search(archive, limit=50)
     assert _find_by_subject(filed, subject) is not None
+
+
+def test_a_folder_is_made_filed_into_renamed_and_thrown_away(provider):
+    """The whole lifecycle against a real server, because every step of it is a
+    command a mock cannot be wrong about: CREATE, RENAME (which carries the mail
+    with it) and DELETE.
+    """
+    p, _cfg = provider
+    tag = uuid.uuid4().hex[:8]
+    name, created = p.create_folder(f"Belastingdienst {tag}")
+    assert created is True
+    assert name in {f.name for f in p.list_folders()}
+
+    # Asking twice is not a failure, and does not make a second folder.
+    assert p.create_folder(f"Belastingdienst {tag}") == (name, False)
+
+    renamed = p.rename_folder(name, f"Fiscus {tag}")
+    names = {f.name for f in p.list_folders()}
+    assert renamed in names and name not in names
+
+    assert p.delete_folder(renamed) == renamed
+    assert renamed not in {f.name for f in p.list_folders()}
+
+
+def test_a_folder_with_mail_in_it_is_not_deleted(provider):
+    """The refusal that keeps the one irreversible command in this package out
+    of reach: the message is still readable afterwards, in the folder that was
+    not deleted.
+    """
+    p, cfg = provider
+    tag = uuid.uuid4().hex[:8]
+    subject = f"E2E folder keep {tag}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, "Do not lose me.")
+
+    folder, _ = p.create_folder(f"Vol {tag}")
+    inbox, _ = p.search("INBOX", limit=50)
+    target = _find_by_subject(inbox, subject)
+    assert target is not None
+    p.move("INBOX", [target.uid], folder)
+
+    with pytest.raises(MailProviderError, match="still holds"):
+        p.delete_folder(folder)
+
+    kept, _ = p.search(folder, limit=50)
+    assert _find_by_subject(kept, subject) is not None
+
+    # Emptied the recoverable way, it goes.
+    again = _find_by_subject(kept, subject)
+    p.delete(folder, [again.uid])
+    assert p.delete_folder(folder) == folder
+
+
+def test_a_renamed_folder_brings_its_mail_along(provider):
+    p, cfg = provider
+    tag = uuid.uuid4().hex[:8]
+    subject = f"E2E folder rename {tag}"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, "Travel with the folder.")
+
+    folder, _ = p.create_folder(f"Oud {tag}")
+    inbox, _ = p.search("INBOX", limit=50)
+    target = _find_by_subject(inbox, subject)
+    assert target is not None
+    p.move("INBOX", [target.uid], folder)
+
+    renamed = p.rename_folder(folder, f"Nieuw {tag}")
+    moved, _ = p.search(renamed, limit=50)
+    assert _find_by_subject(moved, subject) is not None
+
+
+def test_the_trash_folder_itself_cannot_be_deleted(provider):
+    """Refused by role, not by name -- the same lookup mail_delete files into."""
+    p, _cfg = provider
+    trash = p._imap.special_folder("trash")
+    with pytest.raises(MailProviderError):
+        p.delete_folder(trash)
+    with pytest.raises(MailProviderError):
+        p.delete_folder("INBOX")
+    assert trash in {f.name for f in p.list_folders()}

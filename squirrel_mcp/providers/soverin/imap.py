@@ -25,7 +25,14 @@ from imap_tools import (
     MailBoxUnencrypted,
     MailMessageFlags,
 )
-from imap_tools.errors import MailboxFlagError, MailboxLoginError
+from imap_tools.errors import (
+    MailboxFlagError,
+    MailboxFolderCreateError,
+    MailboxFolderDeleteError,
+    MailboxFolderRenameError,
+    MailboxFolderStatusError,
+    MailboxLoginError,
+)
 from imap_tools.utils import check_command_status, clean_uids
 
 from ...logging_config import get_logger
@@ -41,6 +48,7 @@ from ..protocol import (
     MessageDetail,
     MessageSummary,
     OutgoingAttachment,
+    folder_role,
 )
 from .mime import build_email, parse_references, reply_chain
 
@@ -511,6 +519,169 @@ class SoverinImapClient:
                 f"else, or delete them in your mail client."
             )
         return self.move(folder, uids, target), target
+
+    # ---- the folders themselves -------------------------------------------- #
+    def _folder_map(self) -> Tuple[dict, str]:
+        """Every folder by name, plus the delimiter this server joins them with.
+
+        One LIST answers both questions a folder write has: does this name
+        exist, and how would a child of it be spelled. The delimiter is "/" on
+        one server and "." on the next, which is exactly why a caller is asked
+        for a ``parent`` rather than left to assemble a path.
+        """
+        folders = self.list_folders()
+        delimiter = next((f.delimiter for f in folders if f.delimiter), "/")
+        return {f.name: f for f in folders}, delimiter
+
+    def _refuse_if_load_bearing(self, name: str, verb: str, folders: dict) -> None:
+        """INBOX and the five special-use folders are not ours to rename or delete.
+
+        Every one of them is somewhere a client, a server-side rule or this
+        package itself files mail without being told: the Sent copy, the Trash
+        a delete lands in, the Drafts a review sits in. Renaming one breaks
+        that quietly and the next tool call cannot say why, so it is refused by
+        name rather than gated behind a confirm the user cannot judge.
+
+        The role comes from the folder's own SPECIAL-USE flags first and from
+        ``special_folder`` second, because a server that advertises nothing
+        still has a Trash -- the conventional name this package falls back to
+        and files into. Protecting only the flagged ones would leave exactly
+        those mailboxes unprotected.
+        """
+        if name.strip().upper() == "INBOX":
+            raise MailProviderError(
+                f"INBOX cannot be {verb} -- it is the mailbox itself, not a folder in it."
+            )
+        info = folders.get(name)
+        role = folder_role(info.flags) if info is not None else None
+        if not role:
+            role = next(
+                (r for r in SPECIAL_USE_FOLDERS if self.special_folder(r) == name),
+                None,
+            )
+        if role:
+            raise MailProviderError(
+                f"{name!r} is this account's {role} folder, so it cannot be {verb}: "
+                f"mail is filed there without anyone asking, including by this server. "
+                f"Do it in a mail client if that is really the intention."
+            )
+
+    def _message_count(self, name: str) -> int:
+        """How many messages a folder holds, for the emptiness check below."""
+
+        def op(mb: BaseMailBox) -> int:
+            try:
+                return int(mb.folder.status(name, ["MESSAGES"])["MESSAGES"])
+            except (MailboxFolderStatusError, KeyError, ValueError) as exc:
+                # A server that will not answer STATUS is not one to take an
+                # empty folder on trust from: count them by hand instead.
+                logger.info("STATUS on %s failed (%s); counting uids instead", name, exc)
+                self._select(mb, name)
+                return len(list(mb.uids("ALL")))
+
+        return self._run(op)
+
+    def create_folder(self, name: str, parent: Optional[str] = None) -> Tuple[str, bool]:
+        """Make a folder. Returns (full name, whether it had to be created)."""
+        folders, delimiter = self._folder_map()
+        full = (name or "").strip()
+        if not full:
+            raise MailProviderError("A folder needs a name")
+        if parent:
+            if parent not in folders:
+                raise MailNotFoundError(
+                    f"No folder named {parent!r} to create {full!r} inside"
+                )
+            if not full.startswith(parent + delimiter):
+                full = parent + delimiter + full
+        if full in folders:
+            # Asked for, and already true. Not a failure.
+            return full, False
+
+        def op(mb: BaseMailBox) -> Tuple[str, bool]:
+            try:
+                mb.folder.create(full)
+            except MailboxFolderCreateError as exc:
+                raise MailProviderError(
+                    f"The server refused to create {full!r}: {exc}. Some mailboxes "
+                    f'keep every folder under INBOX -- try again with parent="INBOX".'
+                ) from exc
+            return full, True
+
+        return self._run(op)
+
+    def rename_folder(self, name: str, new_name: str) -> str:
+        """Rename a folder, sub-folders and messages included. Returns the new name."""
+        folders, delimiter = self._folder_map()
+        if name not in folders:
+            raise MailNotFoundError(f"No folder named {name!r}")
+        self._refuse_if_load_bearing(name, "renamed", folders)
+        target = (new_name or "").strip()
+        if not target:
+            raise MailProviderError("A folder needs a name")
+        if delimiter in name and delimiter not in target:
+            # "Call it Belastingdienst" is about the name. Moving it to the
+            # root of a namespace the caller cannot see is a different ask.
+            target = name.rsplit(delimiter, 1)[0] + delimiter + target
+        if target == name:
+            return name
+        if target in folders:
+            raise MailProviderError(f"There is already a folder called {target!r}")
+
+        def op(mb: BaseMailBox) -> str:
+            try:
+                mb.folder.rename(name, target)
+            except MailboxFolderRenameError as exc:
+                raise MailProviderError(
+                    f"The server refused to rename {name!r}: {exc}"
+                ) from exc
+            return target
+
+        return self._run(op)
+
+    def delete_folder(self, name: str) -> str:
+        """Delete an EMPTY folder. Returns the name that is gone.
+
+        IMAP's DELETE takes the folder's messages with it and there is no Trash
+        to fish them back out of -- the one irreversible thing in this package.
+        So the mail has to be gone first, by hand: ``delete`` files it in Trash,
+        ``move`` puts it somewhere else, and both leave it recoverable. What is
+        refused here is the combination nobody can undo, not the folder.
+        """
+        folders, delimiter = self._folder_map()
+        if name not in folders:
+            raise MailNotFoundError(f"No folder named {name!r}")
+        self._refuse_if_load_bearing(name, "deleted", folders)
+        children = sorted(n for n in folders if n.startswith(name + delimiter))
+        if children:
+            raise MailProviderError(
+                f"{name!r} still has folders inside it "
+                f"({', '.join(children[:5])}{', ...' if len(children) > 5 else ''}). "
+                f"Delete those first, innermost one first."
+            )
+        held = self._message_count(name)
+        if held:
+            raise MailProviderError(
+                f"{name!r} still holds {held} message(s), and deleting a folder takes "
+                f"its mail with it -- there is no Trash for that. Empty it first: "
+                f"delete the messages (they go to Trash and can be fished back out) "
+                f"or move them somewhere else, then this will go through."
+            )
+
+        def op(mb: BaseMailBox) -> str:
+            if mb.folder.get() == name:
+                # Deleting the folder you are standing in is undefined enough
+                # that servers disagree; step back to INBOX first.
+                self._select(mb, "INBOX")
+            try:
+                mb.folder.delete(name)
+            except MailboxFolderDeleteError as exc:
+                raise MailProviderError(
+                    f"The server refused to delete {name!r}: {exc}"
+                ) from exc
+            return name
+
+        return self._run(op)
 
     def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
         return self._store(folder, uids, MailMessageFlags.FLAGGED, flagged)

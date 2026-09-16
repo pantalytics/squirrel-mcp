@@ -176,6 +176,15 @@ class SoverinMailProvider:
     def delete(self, folder: str, uids: List[str]) -> Tuple[int, str]:
         return self._imap.delete(folder, uids)
 
+    def create_folder(self, name: str, parent: Optional[str] = None) -> Tuple[str, bool]:
+        return self._imap.create_folder(name, parent)
+
+    def rename_folder(self, name: str, new_name: str) -> str:
+        return self._imap.rename_folder(name, new_name)
+
+    def delete_folder(self, name: str) -> str:
+        return self._imap.delete_folder(name)
+
     def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
         return self._imap.flag(folder, uids, flagged)
 

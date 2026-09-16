@@ -126,6 +126,21 @@ Dates/times are ISO 8601 (YYYY-MM-DD for all-day, otherwise full datetime).
   English folder name. "Archive this" means mail_move to the folder whose role
   is "archive" (it may be called "Archief"), and un-archiving is that move
   reversed. Anything with no role is the user's own filing.
+- MAKING A FOLDER: mail_create_folder. "Put these in a folder called
+  Belastingdienst" is two calls -- create it, then mail_move the messages into
+  the `folder` name the result gives back (a folder inside another carries its
+  parent, and the delimiter is the server's, so never assemble a path yourself:
+  pass `name` plus, if it belongs under another folder, `parent`). No
+  confirmation needed. `created: false` means it was already there.
+- mail_rename_folder renames one, mail and sub-folders included. INBOX and any
+  folder with a `role` are refused -- say that is a mail-client job rather than
+  trying another spelling.
+- mail_delete_folder: the ONE thing here that cannot be undone, so it only
+  deletes an EMPTY folder and needs confirm=true. It refuses a folder that
+  still holds mail or sub-folders, with the count. Do NOT offer "delete the
+  folder and everything in it": empty it the recoverable way first
+  (mail_delete puts the messages in Trash, mail_move puts them elsewhere), tell
+  the user that is what you are doing, and then delete the folder.
 - mail_delete: the delete key. DESTRUCTIVE -- requires confirm=true, and show
   the user the subjects and senders first, not just uids. It MOVES the messages
   to the account's Trash rather than erasing them, and `trash_folder` in the

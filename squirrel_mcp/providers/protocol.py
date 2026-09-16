@@ -419,6 +419,54 @@ class MailProvider(Protocol):
         """
         ...
 
+    def create_folder(self, name: str, parent: Optional[str] = None) -> Tuple[str, bool]:
+        """Make a folder. Returns (its full name, whether it had to be created).
+
+        ``parent`` is a folder name, never a path the caller assembled: the
+        hierarchy delimiter is "/" on one server and "." on the next, and on a
+        server where everything lives under INBOX a bare top-level name is
+        simply refused. The backend joins them with the delimiter it read off
+        LIST, which is the same "a name is not knowable" rule the roles above
+        are written with.
+
+        Creating a folder that is already there is not an error -- it is what
+        was asked for -- so ``False`` comes back rather than a failure.
+
+        Read through ``getattr(provider, "create_folder", None)``: a backend
+        written before this refuses clearly instead of crashing.
+        """
+        ...
+
+    def rename_folder(self, name: str, new_name: str) -> str:
+        """Rename a folder. Returns the name it now has.
+
+        A bare ``new_name`` keeps the folder where it is -- "call it
+        Belastingdienst" is about the name, not about moving it to the root of
+        a namespace the caller cannot see. Whatever is inside it, messages and
+        sub-folders alike, comes along.
+
+        The mailbox's own furniture is refused: INBOX, and any folder carrying
+        a SPECIAL-USE role (sent, trash, archive, junk, drafts). Renaming those
+        is a mail-client decision with consequences no tool call can explain.
+        """
+        ...
+
+    def delete_folder(self, name: str) -> str:
+        """Delete an EMPTY folder. Returns the name that is gone.
+
+        The one genuinely irreversible thing a mailbox can be asked to do:
+        ``DELETE`` takes the folder's messages with it, and there is no Trash
+        to fish them out of afterwards. So this refuses a folder that still
+        holds mail or sub-folders and says how many -- ``mail_delete`` files
+        the messages in Trash first, where they are still recoverable, and
+        then the folder goes. The confirm gate answers "did the user ask for
+        this"; the refusal answers "can they get it back", and they are not
+        the same question.
+
+        INBOX and the special-use folders are refused, as in ``rename_folder``.
+        """
+        ...
+
     def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
         """Set or clear the ``\\Flagged`` marker on messages. Returns count changed.
 

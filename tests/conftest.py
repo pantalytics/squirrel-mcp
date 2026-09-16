@@ -52,6 +52,15 @@ class FakeMailProvider:
         self.draft_removal_ok = True
         # Drafts the fake still holds, so a send-then-look-again is observable.
         self.draft_store: dict = {"900": {"subject": "Reviewed", "to": ["bob@example.com"]}}
+        # The folders this fake owns, and how many messages each holds, so a
+        # create/rename/delete round trip is observable through list_folders.
+        self.folders: dict = {
+            "INBOX": {"flags": [], "messages": 3},
+            "Drafts": {"flags": ["\\Drafts"], "messages": 1},
+            "Archive": {"flags": [], "messages": 0},
+            "Archief": {"flags": ["\\HasNoChildren", "\\Archive"], "messages": 0},
+            "Prullenbak": {"flags": ["\\Trash"], "messages": 0},
+        }
         self._email = "me@example.com"
 
     @property
@@ -79,12 +88,35 @@ class FakeMailProvider:
         # Deliberately Dutch: the names a caller would guess are wrong here,
         # which is the whole reason folders report a role.
         return [
-            FolderInfo(name="INBOX"),
-            FolderInfo(name="Drafts", flags=["\\Drafts"]),
-            FolderInfo(name="Archive"),
-            FolderInfo(name="Archief", flags=["\\HasNoChildren", "\\Archive"]),
-            FolderInfo(name="Prullenbak", flags=["\\Trash"]),
+            FolderInfo(name=name, flags=list(f["flags"]))
+            for name, f in self.folders.items()
         ]
+
+    # ---- folder writes ---------------------------------------------------- #
+    def create_folder(self, name, parent=None):
+        full = f"{parent}/{name}" if parent else name
+        if full in self.folders:
+            return full, False
+        self.folders[full] = {"flags": [], "messages": 0}
+        return full, True
+
+    def rename_folder(self, name, new_name) -> str:
+        if name not in self.folders:
+            raise MailNotFoundError(f"No folder named {name!r}")
+        if name == "INBOX" or self.folders[name]["flags"]:
+            raise MailProviderError(f"{name!r} cannot be renamed")
+        self.folders[new_name] = self.folders.pop(name)
+        return new_name
+
+    def delete_folder(self, name) -> str:
+        if name not in self.folders:
+            raise MailNotFoundError(f"No folder named {name!r}")
+        if name == "INBOX" or self.folders[name]["flags"]:
+            raise MailProviderError(f"{name!r} cannot be deleted")
+        if self.folders[name]["messages"]:
+            raise MailProviderError(f"{name!r} still holds messages")
+        del self.folders[name]
+        return name
 
     def search(
         self,
