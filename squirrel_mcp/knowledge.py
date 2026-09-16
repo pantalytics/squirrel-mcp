@@ -42,6 +42,16 @@ Mail tools (all prefixed `mail_`):
   body and the account it will be sent from, and get explicit approval BEFORE
   calling it with confirm=true. The result's `from_address` is the address the
   message actually went out from -- repeat it back to the user.
+- mail_send_draft: send a draft that already exists, by uid, and take it out of
+  Drafts. DESTRUCTIVE/OUTGOING, same confirm=true rule -- read the draft with
+  mail_read and show the user what is in it first, since this tool has no
+  recipients or body of its own to show. This is the tool for "send it" after
+  the user has reviewed a draft: it puts the reviewed message itself on the
+  wire, attachments, embedded images and thread included. NEVER re-type a
+  draft's text into mail_send instead -- that sends a second, different message
+  and leaves the draft behind, which is exactly the duplicate the user sees in
+  their mailbox afterwards. `draft_removed: false` means it was sent but the
+  draft is still there: say so, offer to delete it, and never send it again.
 - ATTACHMENTS go out via the `attachments` argument on mail_send, mail_draft and
   mail_edit_draft. Two forms, and the choice matters: to send on a file that is
   already in the mailbox -- forwarding an invoice, passing on a contract -- use
@@ -106,7 +116,8 @@ Dates/times are ISO 8601 (YYYY-MM-DD for all-day, otherwise full datetime).
 
 Good habits:
 - Resolve folder/addressbook/calendar ids with the matching list_* tool first.
-- Prefer drafting (mail_draft) and letting the user review over sending directly.
+- Prefer drafting (mail_draft) and letting the user review over sending directly,
+  then mail_send_draft to put that same reviewed message out.
 - ALWAYS show the user exactly what will change and get approval before calling
   any write tool (send/move/create/update/delete) with confirm=true.
 - uids are per-collection identifiers returned by the search/read tools; pass the

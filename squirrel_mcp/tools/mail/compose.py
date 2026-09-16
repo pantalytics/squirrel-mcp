@@ -1,4 +1,4 @@
-"""mail_draft, mail_edit_draft, mail_send.
+"""mail_draft, mail_edit_draft, mail_send, mail_send_draft.
 
 Replying: three of these take a ``reply_to_uid``. It does two separate jobs,
 and they live in different places on purpose.
@@ -11,6 +11,14 @@ and they live in different places on purpose.
   untouched, and each backend threads the way its transport threads -- headers
   for IMAP/SMTP, a conversation for an API backend. The tool layer neither
   knows nor cares which.
+
+``mail_send_draft`` is the same split read from the other end. It takes a uid
+and *nothing else*: a draft is already a complete message, so re-reading its
+fields here and handing them to ``send`` would put a second, subtly different
+message on the wire -- a new Message-ID, a rebuilt MIME tree, and whatever the
+draft carried that these arguments do not model (an embedded image's
+``multipart/related``, the threading that makes it a reply) quietly gone. The
+user approved what they read in the draft; that is what leaves.
 """
 
 from __future__ import annotations
@@ -233,6 +241,68 @@ class ComposeToolsMixin:
                 # None here means the draft kept its own files, which is not
                 # the same fact as "it has none" -- say so rather than imply it.
                 attachments=[a.filename for a in files] if files is not None else None,
+            )
+
+        @self.app.tool(
+            title="Send Draft",
+            annotations=ToolAnnotations(
+                readOnlyHint=False,
+                destructiveHint=True,
+                idempotentHint=False,
+                openWorldHint=True,
+            ),
+        )
+        async def mail_send_draft(
+            uid: str,
+            folder: str = "Drafts",
+            confirm: bool = False,
+            account: Optional[str] = None,
+        ) -> SendResult:
+            """Send a draft that already exists. OUTGOING -- requires confirm=true.
+
+            Use this for a message the user has been reviewing: it sends the
+            draft EXACTLY as it stands -- its recipients, its attachments, its
+            embedded images, its place in a thread -- and then removes it from
+            ``folder``. Do NOT re-send the same text through mail_send instead:
+            that composes a second message and leaves the draft behind.
+
+            ``uid`` is the draft's uid, as returned by mail_draft /
+            mail_edit_draft or found with mail_search in the Drafts folder.
+            Pass the same ``account`` the draft lives in.
+
+            Read the draft with mail_read first and show the user its
+            recipients, subject, body and attachments -- there are no arguments
+            here to show them instead -- then call again with confirm=true.
+
+            THE COPY IN SENT: ``saved_to_sent`` says whether the message was
+            also filed in the account's Sent folder (``sent_folder`` names it).
+            ``draft_removed`` says whether the draft is gone. False for either
+            means the message DID go out -- say so and do NOT send again.
+            """
+            provider, sub = await self._get_provider(account, writes=True)
+            send_draft = getattr(provider, "send_draft", None)
+            if send_draft is None:
+                # A backend that silently did nothing here would leave the user
+                # believing a reviewed message had been sent, so say what will
+                # work instead rather than pretending.
+                raise ValidationError(
+                    "This account's mail backend cannot send an existing draft. "
+                    "Send the message with mail_send and delete the draft, or "
+                    "use an IMAP/SMTP account."
+                )
+            require_confirm(confirm, "Sending a draft")
+            result = await run_blocking(provider, send_draft, folder, uid)
+            self._track_usage(sub, "mail_send_draft")
+            return SendResult(
+                status="Draft sent",
+                message_id=result.get("message_id"),
+                recipients=result.get("recipients", []),
+                from_address=getattr(provider, "email", None) or None,
+                subject=result.get("subject"),
+                attachments=result.get("attachments", []),
+                saved_to_sent=result.get("saved_to_sent"),
+                sent_folder=result.get("sent_folder"),
+                draft_removed=result.get("draft_removed"),
             )
 
         @self.app.tool(

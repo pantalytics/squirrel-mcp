@@ -12,6 +12,7 @@ import datetime
 import imaplib
 import re
 import ssl
+from email.message import Message
 from typing import Callable, List, Optional, Tuple, TypeVar
 
 from imap_tools import (
@@ -367,6 +368,44 @@ class SoverinImapClient:
             return found[-1] if found else ""
 
         return self._run(op)
+
+    # ---- sending a draft that already exists ------------------------------ #
+    def fetch_outgoing(self, folder: str, uid: str) -> Tuple[Message, List[str]]:
+        """A draft as the message it already is, plus its attachment filenames.
+
+        Returns the parsed RFC 5322 object rather than anything this package
+        models, because the caller is about to *send* it: a draft is already a
+        complete message, and recomposing it from the fields ``fetch_message``
+        exposes would drop everything they do not cover -- the MIME tree an
+        inline image needs, the threading headers a reply carries, a header
+        another client wrote. The filenames ride along from the same fetch so
+        the tool can name what went out without asking the server twice.
+        """
+
+        def op(mb: BaseMailBox) -> Tuple[Message, List[str]]:
+            self._select(mb, folder)
+            msgs = list(mb.fetch(uid_list=[uid], mark_seen=False, limit=1))
+            if not msgs:
+                raise MailNotFoundError(f"Draft uid {uid} not found in {folder}")
+            names = [att.filename for att in msgs[0].attachments if att.filename]
+            return msgs[0].obj, names
+
+        return self._run(op)
+
+    def delete_message(self, folder: str, uid: str) -> None:
+        """Remove one message, the way ``update_draft`` removes the revision
+        it replaced -- the same STORE + EXPUNGE, for the same kind of message.
+
+        Only ever pointed at a draft that has just been delivered: the copy the
+        recipient got is in Sent by then, so what is being removed is the
+        working copy, not the mail.
+        """
+
+        def op(mb: BaseMailBox) -> None:
+            self._select(mb, folder)
+            mb.delete([uid])
+
+        self._run(op)
 
     # ---- the copy in Sent -------------------------------------------------- #
     def sent_folder(self) -> str:

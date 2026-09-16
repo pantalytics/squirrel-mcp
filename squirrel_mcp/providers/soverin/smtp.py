@@ -10,8 +10,9 @@ from __future__ import annotations
 import datetime
 import smtplib
 import ssl
-from email.message import EmailMessage
-from typing import List, Optional
+from email.message import Message
+from email.utils import formatdate, getaddresses, make_msgid
+from typing import List, Optional, Sequence
 
 from ...logging_config import get_logger
 from ..protocol import MailAuthError, MailProviderError, OutgoingAttachment
@@ -37,6 +38,18 @@ MIN_UPLOAD_BYTES_PER_SEC = 50 * 1024
 
 def _timeout_for(size_bytes: int) -> int:
     return SMTP_TIMEOUT + size_bytes // MIN_UPLOAD_BYTES_PER_SEC
+
+
+def _header_recipients(msg: Message) -> List[str]:
+    """Every address a composed message is addressed to, To + Cc + Bcc."""
+    pairs = getaddresses(
+        msg.get_all("To", []) + msg.get_all("Cc", []) + msg.get_all("Bcc", [])
+    )
+    seen: List[str] = []
+    for _, addr in pairs:
+        if addr and addr not in seen:
+            seen.append(addr)
+    return seen
 
 
 class SoverinSmtpClient:
@@ -105,7 +118,45 @@ class SoverinSmtpClient:
             attachments=attachments,
             body_html=body_html,
         )
-        recipients = all_recipients(to, cc, bcc)
+        return self._deliver_prepared(msg, all_recipients(to, cc, bcc))
+
+    def send_existing(self, msg: Message) -> dict:
+        """Deliver a message somebody already composed -- a draft -- as it stands.
+
+        The counterpart of ``send``, and the reason both end in
+        ``_deliver_prepared``: a draft is already a complete RFC 5322 message,
+        so rebuilding it from fields the tool layer re-read would be a second,
+        subtly different message -- a different Message-ID, a different MIME
+        tree, and whatever the composer put in that the tools do not model
+        quietly gone. What leaves is what was reviewed.
+
+        Two headers are the exception, and both would be wrong left alone:
+
+        * ``Date`` is re-stamped to now. A draft's Date is when it was
+          *written*, and a message that went out this afternoon carrying this
+          morning's timestamp sorts into the recipient's inbox at the wrong
+          place -- above mail they have already read.
+        * ``Message-ID`` is minted when the draft has none (ours always do;
+          another client's need not), because it is what the Sent copy is
+          matched on and what a reply to this message threads onto.
+
+        Recipients come from the message's own headers -- the draft is the
+        only statement of who it is for.
+        """
+        recipients = _header_recipients(msg)
+        if not recipients:
+            raise MailProviderError(
+                "This draft has no recipients: fill in 'to' with mail_edit_draft first."
+            )
+        del msg["Date"]
+        msg["Date"] = formatdate(localtime=True)
+        if not msg["Message-ID"]:
+            msg["Message-ID"] = make_msgid()
+        return self._deliver_prepared(msg, recipients)
+
+    def _deliver_prepared(self, msg: Message, recipients: Sequence[str]) -> dict:
+        """Put a finished message on the wire. The one delivery path."""
+        recipients = list(recipients)
         if not recipients:
             raise MailProviderError("No recipients: 'to' is required")
 
@@ -148,7 +199,7 @@ class SoverinSmtpClient:
             "sent_at": datetime.datetime.now(datetime.timezone.utc),
         }
 
-    def _deliver(self, msg: EmailMessage, recipients: List[str], size_bytes: int) -> None:
+    def _deliver(self, msg: Message, recipients: List[str], size_bytes: int) -> None:
         timeout = _timeout_for(size_bytes)
         if self._security == "ssl":
             with smtplib.SMTP_SSL(

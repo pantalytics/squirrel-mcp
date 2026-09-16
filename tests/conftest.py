@@ -10,6 +10,7 @@ from squirrel_mcp.providers.protocol import (
     AttachmentInfo,
     AttachmentPayload,
     FolderInfo,
+    MailNotFoundError,
     MessageDetail,
     MessageSummary,
 )
@@ -38,6 +39,13 @@ class FakeMailProvider:
         # Flipped off to stand in for a send whose copy could not be filed --
         # the message still went out, which is the whole point of the field.
         self.sent_copy_ok = True
+        # What mail_send_draft sent, as (folder, uid), and the outcome of
+        # taking the draft out afterwards -- flipped off to stand in for a
+        # delivered message whose draft survived it.
+        self.sent_drafts: list = []
+        self.draft_removal_ok = True
+        # Drafts the fake still holds, so a send-then-look-again is observable.
+        self.draft_store: dict = {"900": {"subject": "Reviewed", "to": ["bob@example.com"]}}
         self._email = "me@example.com"
 
     @property
@@ -171,6 +179,23 @@ class FakeMailProvider:
             "recipients": list(to) + list(cc or []),
             "saved_to_sent": self.sent_copy_ok,
             "sent_folder": "Sent" if self.sent_copy_ok else None,
+        }
+
+    def send_draft(self, folder, uid) -> dict:
+        if uid not in self.draft_store:
+            raise MailNotFoundError(f"Draft uid {uid} not found in {folder}")
+        draft = self.draft_store[uid]
+        self.sent_drafts.append((folder, uid))
+        if self.draft_removal_ok:
+            del self.draft_store[uid]
+        return {
+            "message_id": "<draft-sent@example.com>",
+            "recipients": list(draft["to"]),
+            "subject": draft["subject"],
+            "attachments": ["doc.pdf"],
+            "saved_to_sent": self.sent_copy_ok,
+            "sent_folder": "Sent" if self.sent_copy_ok else None,
+            "draft_removed": self.draft_removal_ok,
         }
 
     def move(self, folder, uids, destination) -> int:

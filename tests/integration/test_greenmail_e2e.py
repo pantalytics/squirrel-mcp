@@ -547,3 +547,75 @@ def test_an_excluded_word_removes_the_message(provider):
 
     excluded, _ = p.search("INBOX", f"{marker} -unsubscribe", limit=50)
     assert _find_by_subject(excluded, subject) is None
+
+
+def test_a_draft_is_delivered_and_leaves_drafts(provider):
+    """The whole round trip against a real server: draft, send that draft, and
+    it is in the recipient's inbox, in Sent, and gone from Drafts.
+
+    Only a server proves the last part. The delete is a STORE + EXPUNGE, and a
+    draft that is still listed afterwards is exactly the duplicate this tool
+    exists to stop.
+    """
+    p, _ = provider
+    subject = f"E2E send draft {uuid.uuid4().hex[:8]}"
+
+    uid = p.save_draft([TEST_EMAIL], subject, "Reviewed, then sent.", folder="Drafts")
+    result = p.send_draft("Drafts", uid)
+
+    assert TEST_EMAIL in result["recipients"]
+    assert result["subject"] == subject
+    assert result["draft_removed"] is True
+    assert result["saved_to_sent"] is True
+
+    inbox, _ = p.search("INBOX", limit=50)
+    assert _find_by_subject(inbox, subject) is not None, "never arrived"
+
+    sent, _t = p.search(result["sent_folder"], limit=50)
+    assert _find_by_subject(sent, subject) is not None, "no copy in Sent"
+
+    drafts, _t = p.search("Drafts", limit=50)
+    assert _find_by_subject(drafts, subject) is None, "the draft is still in Drafts"
+
+
+def test_a_sent_draft_keeps_its_attachment_and_its_thread(provider):
+    """What makes sending the draft itself the right call: the file and the
+    threading headers survive because nothing was rebuilt from re-read fields.
+    """
+    p, cfg = provider
+    subject = f"E2E draft parts {uuid.uuid4().hex[:8]}"
+    parent_id = f"<{uuid.uuid4().hex}@external.test>"
+    _seed_message(cfg.smtp_host, cfg.smtp_port, subject, "Original.", message_id=parent_id)
+
+    inbox, _ = p.search("INBOX", limit=50)
+    original = _find_by_subject(inbox, subject)
+    assert original is not None
+
+    reply_subject = f"Re: {subject}"
+    uid = p.save_draft(
+        [TEST_EMAIL],
+        reply_subject,
+        "Answering, with the contract.",
+        folder="Drafts",
+        reply_to_uid=original.uid,
+        attachments=[
+            OutgoingAttachment(
+                filename="contract.pdf",
+                content_type="application/pdf",
+                content=b"%PDF-1.4 contract bytes",
+            )
+        ],
+    )
+    result = p.send_draft("Drafts", uid)
+    assert result["attachments"] == ["contract.pdf"]
+
+    inbox, _ = p.search("INBOX", limit=50)
+    arrived = _find_by_subject(inbox, reply_subject)
+    assert arrived is not None
+
+    detail = p.fetch_message("INBOX", arrived.uid)
+    assert [a.filename for a in detail.attachments] == ["contract.pdf"]
+    assert p.fetch_attachment("INBOX", arrived.uid, 0).content == b"%PDF-1.4 contract bytes"
+
+    raw, _names = p._imap.fetch_outgoing("INBOX", arrived.uid)
+    assert raw["In-Reply-To"] == parent_id

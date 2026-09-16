@@ -144,6 +144,32 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   `tests/test_sent_copy.py` pins the discovery, the flags, the deduplication
   and the never-fatal rule; the GreenMail e2e sends for real and reads the copy
   back out of Sent.
+- **Sending a draft sends the draft, not a copy of its fields.** Squirrel could
+  write a draft and edit one but not send it, so the only way out was re-typing
+  the text into `mail_send` -- which puts a *second* message on the wire and
+  leaves the reviewed one in Drafts. `mail_send_draft` takes a **uid and
+  nothing else**, and that is the decision: a draft is already a complete RFC
+  5322 message, so rebuilding it from the arguments the tool layer models would
+  quietly drop everything they do not -- the `multipart/related` an embedded
+  image lives in, the `In-Reply-To` that makes it a reply, a header another
+  client wrote. What the user approved is what leaves. `imap.fetch_outgoing`
+  hands the parsed message (plus its attachment filenames, off the same fetch)
+  to `smtp.send_existing`, which re-stamps exactly two headers -- `Date`,
+  because a draft's is when it was *written* and would sort the mail above
+  what the recipient has already read, and a `Message-ID` when the draft has
+  none -- and then joins `send`'s own `_deliver_prepared`, so the Bcc rule and
+  the SIZE check are one path rather than two. `provider.send_draft` is the
+  third thing only that class can do, after `_reply_headers` and
+  `_file_sent_copy`: the message lives on the IMAP side and the wire is on the
+  SMTP side. Removing the draft is last and, like the Sent copy, **never fatal**
+  -- the mail is with the recipient by then, so a failure rides back as
+  `draft_removed=False` rather than reporting a delivered message as
+  undelivered. The tool reads the capability as
+  `getattr(provider, "send_draft", None)` and refuses with the alternative
+  named, so a backend that has not got it is told about instead of crashed
+  into. `tests/test_send_draft.py` pins the bytes, the two headers and the
+  never-fatal rule; the GreenMail e2e drafts, sends and then finds it in the
+  inbox, in Sent, and gone from Drafts.
 - **A meeting is not an appointment, and CalDAV only does the second.**
   `calendar_create_event` takes `attendees` and `online_meeting`, and both are
   gated on a capability the provider declares -- `supports_attendees` /

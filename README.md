@@ -39,8 +39,15 @@ is configured.
 | `mail_get_attachment` | Download one attachment | read-only |
 | `mail_draft` / `mail_edit_draft` | Create / update a draft in Drafts, attachments included | writes to Drafts |
 | `mail_send` | Send a message, attachments included — **requires `confirm=true`** | ⚠️ outgoing |
+| `mail_send_draft` | Send a draft that already exists, then take it out of Drafts — **requires `confirm=true`** | ⚠️ outgoing |
 | `mail_move` | Move messages between folders — **requires `confirm=true`** | ⚠️ mutating |
 | `mail_flag` | Flag / unflag messages — the star, `flagged=false` clears it | reversible |
+
+Drafting and sending are the other two halves: `mail_draft` writes the message,
+the user reads it, and `mail_send_draft` puts *that* message on the wire and
+removes it from Drafts. It takes a uid and nothing else on purpose — a draft is
+already a complete message, so re-typing its text into `mail_send` would send a
+second, subtly different one and leave the reviewed draft behind.
 
 Flagging and finding are two halves of one thing: `mail_flag` sets the marker,
 `mail_search(flagged_only=true)` gets those messages back — filtered by the
