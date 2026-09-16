@@ -228,11 +228,13 @@ async def test_a_file_already_in_the_mailbox_can_be_embedded_too(fake_provider):
 
 # ---- the tools ------------------------------------------------------------ #
 async def test_send_hands_the_html_body_to_the_provider(app_with_tools, fake_provider):
+    """body_format="html" makes ``body`` the HTML half; the provider still
+    receives both, which is what the wire carries."""
     await app_with_tools.call_tool(
         "mail_send",
         {
-            "to": "a@b.com", "subject": "Hi", "body": "text", "confirm": True,
-            "body_html": '<p><img src="cid:logo"></p>',
+            "to": "a@b.com", "subject": "Hi", "confirm": True,
+            "body": '<p><img src="cid:logo"></p>', "body_format": "html",
             "attachments": [
                 {"filename": "logo.png", "content_base64": PNG,
                  "inline": True, "content_id": "logo"},
@@ -248,14 +250,43 @@ async def test_send_hands_the_html_body_to_the_provider(app_with_tools, fake_pro
 async def test_a_draft_carries_the_html_body_too(app_with_tools, fake_provider):
     await app_with_tools.call_tool(
         "mail_create_draft",
-        {"to": "a@b.com", "subject": "Hi", "body": "text", "body_html": "<p>rich</p>"},
+        {"to": "a@b.com", "subject": "Hi", "body": "<p>rich</p>", "body_format": "html"},
     )
     assert fake_provider.draft_kwargs[-1]["body_html"] == "<p>rich</p>"
 
 
 async def test_a_plain_send_still_sends_no_html(app_with_tools, fake_provider):
+    """The default is text, and a text body is still the single part it was."""
     await app_with_tools.call_tool(
         "mail_send",
         {"to": "a@b.com", "subject": "Hi", "body": "text", "confirm": True},
     )
     assert fake_provider.send_kwargs[-1]["body_html"] is None
+    assert fake_provider.sent[-1][2] == "text"
+
+
+async def test_the_plain_half_is_derived_from_the_html(app_with_tools, fake_provider):
+    """One body in, both halves out: a plain-text client gets readable text
+    rather than markup, without the caller writing the message twice."""
+    await app_with_tools.call_tool(
+        "mail_send",
+        {
+            "to": "a@b.com", "subject": "Hi", "confirm": True, "body_format": "html",
+            "body": "<p>Hoi Iris,</p><p>Dank &amp; groet</p>",
+        },
+    )
+    assert fake_provider.sent[-1][2] == "Hoi Iris,\n\nDank & groet"
+
+
+async def test_an_unknown_format_is_refused_before_anything_is_sent(
+    app_with_tools, fake_provider
+):
+    """Not a guess: 'markdown' would otherwise go out as literal asterisks."""
+    with pytest.raises(Exception) as exc:
+        await app_with_tools.call_tool(
+            "mail_send",
+            {"to": "a@b.com", "subject": "Hi", "body": "*x*", "confirm": True,
+             "body_format": "markdown"},
+        )
+    assert "body_format" in str(exc.value)
+    assert not fake_provider.sent

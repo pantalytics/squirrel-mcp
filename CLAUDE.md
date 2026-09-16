@@ -266,9 +266,10 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   e2e proves a real server takes it and hands the same bytes back.
 - **Inline is the HTML compose path that unblocked it.** Inline was deferred
   above for a good reason -- it means nothing without an HTML body referencing
-  the part -- so `body_html` came first and the reason is now *enforced* rather
-  than avoided. `body_html` is added as an **alternative**: `body` stays the
-  text a plain-text client shows, and both halves are the same message. An
+  the part -- so the HTML body came first and the reason is now *enforced*
+  rather than avoided. The provider's `body_html` is added as an
+  **alternative**: `body` stays the text a plain-text client shows, and both
+  halves are the same message. An
   attachment marked `inline` (with a `content_id` the tool layer fills in when
   the caller omits one, since a part nothing can name is a part nothing can
   show) is only *placed* inline when there is HTML to point at it, and
@@ -285,6 +286,26 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   `cid:logo`, `<logo>`). `tests/test_attachments_inline.py` pins the trees and
   the id handling; the GreenMail e2e reads the delivered `multipart/related`
   back off a real server.
+- **The tool layer asks which format, not for both bodies.** `body_html` is
+  what the *providers* take, and for a while it was also what the tools took:
+  a caller wanting HTML passed `body` **and** `body_html`, writing the same
+  message twice. That is two arguments for one decision, and the second copy
+  is the one that rots -- an edit to the HTML leaves yesterday's sentence in
+  the plain-text half, where nobody proofreading the mail will see it.
+  So the compose tools (`mail_send`, `mail_create_draft`, `mail_edit_draft`)
+  take one `body` plus `body_format` = `text` (the default) | `html`, and
+  `tools/_common.as_bodies` splits it into the pair `MailProvider` still
+  expects. The wire is unchanged. **The derived half is the trade being
+  made**: `html_text.html_to_text` flattens blocks to line breaks, list items
+  to dashes and entities to characters, which is worse than a plain-text
+  alternative written by hand and better than one that disagrees with the
+  HTML -- and a caller who wants to hand-write it can, one level down, in the
+  provider. The same function serves the *read* path, where a message with no
+  `text/plain` part has always been flattened; it used to be a private copy in
+  `imap.py` that collapsed every message to one line and left `&amp;` in the
+  text. An unrecognised format is **refused, not guessed**: `markdown` would
+  otherwise leave as literal asterisks. `tests/test_body_format.py` pins the
+  split, the flattening and the refusal.
 - `providers/soverin/contacts.py` **discovers** the address-book home rather than
   assuming a path. CardDAV standardises none, so `carddav_url` is a starting
   point: RFC 6764's `current-user-principal` → `addressbook-home-set` hops turn a
@@ -404,4 +425,5 @@ defaults -- a missing one is a config error, never a guess.
 | `error_handling.py` / `error_sanitizer.py` | Error hierarchy + message sanitizing |
 | `logging_config.py` | Structured logging to stderr |
 | `search_query.py` | Search grammar: parse, fold, verify, widen (both backends) |
+| `html_text.py` | HTML -> text: the read fallback and `body_format="html"`'s plain half |
 | `usage.py` | Usage-tracking stub (full version in admin package) |

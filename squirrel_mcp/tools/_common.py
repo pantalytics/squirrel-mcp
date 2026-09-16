@@ -15,6 +15,7 @@ from ..error_handling import (
     SystemError,
     ValidationError,
 )
+from ..html_text import html_to_text
 from ..logging_config import get_logger
 from ..providers import ProviderAuthError, ProviderError, ProviderNotFoundError
 
@@ -106,6 +107,32 @@ def reply_subject(subject: str) -> str:
     if _RE_PREFIX.match(stripped):
         return stripped
     return f"Re: {stripped}"
+
+
+BODY_FORMATS = ("text", "html")
+
+
+def as_bodies(body: str, body_format: Any) -> tuple[str, str | None]:
+    """Turn one body plus its format into the ``(text, html)`` pair providers take.
+
+    The tool surface asks for a body and *which of the two it is*, because a
+    caller composing a message writes it once. The wire still carries both --
+    ``multipart/alternative``, text first -- so an HTML body gets its plain-text
+    half derived here rather than retyped by the caller, where it would drift
+    from the HTML the moment either was edited.
+
+    Deriving is the deliberate trade: a hand-written plain-text alternative that
+    reads better than the stripped HTML is the case being dropped, and it is
+    worth one argument instead of two.
+    """
+    fmt = str(body_format or "text").strip().lower()
+    if fmt not in BODY_FORMATS:
+        raise ValidationError(
+            f"body_format must be 'text' or 'html', got {body_format!r}"
+        )
+    if fmt == "text":
+        return body, None
+    return html_to_text(body), body
 
 
 def bare_addresses(values: Iterable[str]) -> list[str]:

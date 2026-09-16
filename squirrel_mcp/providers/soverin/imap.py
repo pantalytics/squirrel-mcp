@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import datetime
 import imaplib
-import re
 import ssl
 from email.message import Message
 from typing import Callable, List, Optional, Tuple, TypeVar
@@ -28,6 +27,7 @@ from imap_tools import (
 from imap_tools.errors import MailboxFlagError, MailboxLoginError
 from imap_tools.utils import check_command_status, clean_uids
 
+from ...html_text import html_to_text
 from ...logging_config import get_logger
 from ...search_query import MailQuery, parse
 from ..protocol import (
@@ -51,19 +51,11 @@ T = TypeVar("T")
 # Connection-level failures that warrant one transparent reconnect + retry.
 _CONNECTION_ERRORS = (imaplib.IMAP4.abort, OSError, ConnectionError, EOFError)
 
-_TAG_RE = re.compile(r"<[^>]+>")
 
 # The SPECIAL-USE names the Sent path used before the table moved to
 # ``providers.protocol`` -- kept so this module still reads as IMAP.
 SENT_SPECIAL_USE = SPECIAL_USE_FOLDERS["sent"][0]
 DEFAULT_SENT_FOLDER = SPECIAL_USE_FOLDERS["sent"][1]
-
-
-def _html_to_text(html: str) -> str:
-    """Very small HTML -> text fallback for messages with no text/plain part."""
-    text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", "", html)
-    text = _TAG_RE.sub(" ", text)
-    return re.sub(r"\s+", " ", text).strip()
 
 
 class SoverinImapClient:
@@ -655,7 +647,7 @@ class SoverinImapClient:
 
     @classmethod
     def _to_summary(cls, msg, folder: str) -> MessageSummary:
-        body = msg.text or (_html_to_text(msg.html) if msg.html else "")
+        body = msg.text or (html_to_text(msg.html) if msg.html else "")
         return MessageSummary(
             uid=msg.uid or "",
             folder=folder,
@@ -671,7 +663,7 @@ class SoverinImapClient:
 
     @classmethod
     def _to_detail(cls, msg, folder: str) -> MessageDetail:
-        body = msg.text or (_html_to_text(msg.html) if msg.html else "")
+        body = msg.text or (html_to_text(msg.html) if msg.html else "")
         attachments = [
             AttachmentInfo(
                 index=i,
