@@ -1,11 +1,12 @@
-"""The IMAP flag path's command shape, without a server.
+"""The IMAP marker path's command shape, without a server.
 
-``flag`` is the one provider method that builds its own IMAP command instead of
-delegating to imap-tools, so the shape of that command is worth pinning on
-every branch push -- the GreenMail e2e proves it works, but only in the
-integration job. The other half pinned here is what the method deliberately
-does *not* do: imap-tools' own ``mb.flag`` follows each STORE with an EXPUNGE,
-which would permanently drop anything another client left marked \\Deleted.
+``flag`` and ``set_seen`` are the provider methods that build their own IMAP
+command instead of delegating to imap-tools, so the shape of that command is
+worth pinning on every branch push -- the GreenMail e2e proves it works, but
+only in the integration job. The other half pinned here is what they
+deliberately do *not* do: imap-tools' own ``mb.flag`` follows each STORE with
+an EXPUNGE, which would permanently drop anything another client left marked
+\\Deleted.
 """
 
 import pytest
@@ -88,6 +89,37 @@ def test_a_uid_that_could_inject_imap_is_refused(client):
     pasted into a command string."""
     with pytest.raises(MailProviderError):
         client.flag("INBOX", ["101 (\\Deleted)"])
+    assert client._mailbox.client.uid_calls == []
+
+
+def test_mark_read_stores_the_seen_marker(client):
+    assert client.set_seen("INBOX", ["101", "102"]) == 2
+    mb = client._mailbox
+    assert mb.selected == "INBOX"
+    assert mb.client.uid_calls == [("STORE", "101,102", "+FLAGS", "(\\Seen)")]
+
+
+def test_mark_unread_removes_it(client):
+    assert client.set_seen("INBOX", ["101"], seen=False) == 1
+    assert client._mailbox.client.uid_calls == [("STORE", "101", "-FLAGS", "(\\Seen)")]
+
+
+def test_mark_read_never_expunges(client):
+    """The \\Seen sweep is exactly where a stray EXPUNGE would bite: an inbox
+    clean-up touches every message, including whatever another client left
+    marked \\Deleted."""
+    client.set_seen("INBOX", ["101"])
+    assert client._mailbox.client.expunged == 0
+
+
+def test_mark_read_refuses_a_uid_that_could_inject_imap(client):
+    with pytest.raises(MailProviderError):
+        client.set_seen("INBOX", ["101 (\\Deleted)"])
+    assert client._mailbox.client.uid_calls == []
+
+
+def test_mark_read_on_no_uids_touches_nothing(client):
+    assert client.set_seen("INBOX", []) == 0
     assert client._mailbox.client.uid_calls == []
 
 

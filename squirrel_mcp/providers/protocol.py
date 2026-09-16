@@ -346,6 +346,20 @@ class MailProvider(Protocol):
         """
         ...
 
+    def set_seen(self, folder: str, uids: List[str], seen: bool = True) -> int:
+        """Set or clear the ``\\Seen`` marker on messages. Returns count changed.
+
+        The read/unread state every mail client draws as bold-or-not. A
+        sibling of ``flag`` rather than an argument to it: they are two
+        independent markers, and a tool that took both would have to be told
+        which one it was not changing.
+
+        Reading a message does *not* set it -- ``read`` fetches without
+        marking, so what is unread stays the user's answer to "what have I not
+        looked at", not a side effect of an agent looking.
+        """
+        ...
+
 
 # --------------------------------------------------------------------------- #
 # Calendar pillar (CalDAV) -- value objects + protocol.

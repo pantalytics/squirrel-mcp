@@ -176,6 +176,9 @@ class SoverinMailProvider:
     def flag(self, folder: str, uids: List[str], flagged: bool = True) -> int:
         return self._imap.flag(folder, uids, flagged)
 
+    def set_seen(self, folder: str, uids: List[str], seen: bool = True) -> int:
+        return self._imap.set_seen(folder, uids, seen)
+
     # ---- send (SMTP) ----------------------------------------------------- #
     def send(
         self,

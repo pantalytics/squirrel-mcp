@@ -35,9 +35,10 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
    IMAP, stdlib `smtplib`/`email` for SMTP) instead of hand-rolling protocol code.
 4. **Confirm before it leaves or changes** -- sending and moving/deleting require
    an explicit `confirm=true` and are flagged `destructiveHint`. The line is
-   "could the user not get this back", not "is this a write": `mail_flag` sets
-   and clears the same marker with the same tool and alters no message, so
-   gating it would only teach clients that the confirm prompt is noise.
+   "could the user not get this back", not "is this a write": `mail_flag` and
+   `mail_mark_read` set and clear the same marker with the same tool and alter
+   no message, so gating them would only teach clients that the confirm prompt
+   is noise.
 5. **No fallbacks** -- explicit config or a clear error, never guess credentials.
 6. **Open core** -- public package works standalone (stdio, one mailbox from env);
    the private package adds SaaS features via well-defined seams.
@@ -57,13 +58,28 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   fails at first call, not at import -- the test moves that to `make test`),
   and the tool layer contains no reference to a concrete client, which used to
   be only a convention below.
-- `SoverinImapClient.flag` is the one deliberate exception to principle 3: it
-  issues its own `UID STORE` instead of calling `imap-tools`' `mb.flag`, because
-  that helper follows every STORE with an `EXPUNGE` -- which would permanently
-  drop whatever another mail client left marked `\Deleted` in the folder.
-  Flagging is advertised as non-destructive, so it does not get to delete
-  anything. `tests/test_imap_flag.py` pins the command shape and the absent
-  expunge; the GreenMail e2e proves both against a real server.
+- **The two markers are siblings, and both write their own STORE.**
+  `flag` (`\Flagged`, the star) and `set_seen` (`\Seen`, read/unread) are the
+  one deliberate exception to principle 3: `SoverinImapClient._store` issues
+  its own `UID STORE` instead of calling `imap-tools`' `mb.flag`, because that
+  helper follows every STORE with an `EXPUNGE` -- which would permanently drop
+  whatever another mail client left marked `\Deleted` in the folder. Marking is
+  advertised as non-destructive, so it does not get to delete anything, and the
+  `\Seen` sweep is where that bites hardest: clearing an inbox after a mass
+  mailing touches every message in it. They are **two methods, not one method
+  with a marker argument**, because they are independent states and a single
+  call would have to be told which one it was *not* changing.
+  `mail_mark_read` is the tool, `read=false` puts a message back to unread, and
+  it needs no `confirm=` for the same reason `mail_flag` does not. Deliberately
+  **reading does not mark**: every `fetch` passes `mark_seen=False`, so "what
+  have I not looked at" stays the user's answer rather than a side effect of an
+  agent looking, and marking is always something the user asked for. The tool
+  reads the provider method as `getattr(provider, "set_seen", None)` and refuses
+  clearly when it is absent -- a backend from before this existed would
+  otherwise report a sweep it never made (the attachments rule again).
+  `tests/test_imap_flag.py` pins both command shapes and the absent expunge;
+  the GreenMail e2e proves both against a real server, including that
+  `unseen_only` then agrees with what was written.
 - **A search query is parsed once, here, not interpreted by each backend.**
   `search_query.py` owns the grammar (`from:`/`to:`/`cc:`/`subject:`/`body:`,
   `"phrases"`, `-exclusions`, `OR`, `has:attachment`) and both backends compile
