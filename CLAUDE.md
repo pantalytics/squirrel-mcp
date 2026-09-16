@@ -113,7 +113,7 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   grammar and the ladder, `tests/test_mail_search.py` the IMAP keys and the
   widening policy, and the GreenMail e2e proves a real server answers them.
 - **Replying is a provider concern, not a header the tool layer writes.**
-  `mail_send` / `mail_draft` take a `reply_to_uid` (+ `reply_to_folder`) and
+  `mail_send` / `mail_create_draft` take a `reply_to_uid` (+ `reply_to_folder`) and
   hand it to the provider untouched, because *how* you join a thread is the
   transport's business: IMAP/SMTP reads the parent's `Message-ID` /
   `References` and sends the matching headers (`imap.reply_headers` →
@@ -213,7 +213,7 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   expunge and the tool's confirm gate; the GreenMail e2e deletes for real and
   reads the message back out of Trash.
 - **A meeting is not an appointment, and CalDAV only does the second.**
-  `calendar_create_event` takes `attendees` and `online_meeting`, and both are
+  `calendar_create` takes `attendees` and `online_meeting`, and both are
   gated on a capability the provider declares -- `supports_attendees` /
   `supports_online_meeting`, read as `getattr(..., False)` so a backend written
   before them answers no. This is the attachments rule (below) applied to the
@@ -226,7 +226,7 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   Graph, in the admin package, answers True: `isOnlineMeeting` +
   `onlineMeetingProvider` mint a real Teams meeting, and Graph mails the
   invitations itself. The link comes back as `join_url` on `EventDetail`, and
-  `calendar_create_event` re-reads the event to report it -- a meeting nobody
+  `calendar_create` re-reads the event to report it -- a meeting nobody
   can join is half an answer, and a read-back that fails is logged rather than
   raised, because the event *was* created and a failed tool call invites a
   retry that books it twice. `attendees` accepts the shapes mail recipients
@@ -366,6 +366,20 @@ defaults -- a missing one is a config error, never a guess.
 ## Conventions
 
 - Follow existing style (ruff configured in `pyproject.toml`).
+- **Tool names: `<pillar>_<verb>` for the pillar's own object,
+  `<pillar>_<verb>_<object>` for anything else in that pillar.** Each pillar has
+  exactly one primary object -- mail has messages, calendar has events, contacts
+  has contacts -- so naming it is redundant: `calendar_search`, not
+  `calendar_search_events`. Everything secondary says what it is
+  (`mail_list_folders`, `mail_get_attachment`, `calendar_list_calendars`), and
+  a verb is a verb (`mail_create_draft`, never `mail_draft`). Two spellings
+  survive on purpose: `contacts` stays plural while its siblings are singular,
+  because the three pillars have been written `mail` / `contacts` / `calendar`
+  since v1 and that is the namespace's name; and `mail_flag` / `mail_mark_read`
+  keep the words a person would use over a symmetrical `set_flagged` /
+  `set_read`. A rename here is a breaking change to the MCP surface and to the
+  admin package, which registers this same tool layer -- both repos ship it
+  together.
 - Tools never import a concrete client -- only `providers.protocol`.
 - Every backend must satisfy `MailProvider`.
 - Secrets only via env / `.env` (gitignored). No hardcoded fallbacks.

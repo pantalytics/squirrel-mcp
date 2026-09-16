@@ -243,7 +243,7 @@ async def test_draft_can_be_a_reply_too(app_with_tools, fake_provider):
     """Drafting a reply for the user to review is the recommended path, so it
     has to thread just as well as sending one."""
     result = await app_with_tools.call_tool(
-        "mail_draft", {"body": "sure", "reply_to_uid": "101"}
+        "mail_create_draft", {"body": "sure", "reply_to_uid": "101"}
     )
     to, subject, _body, _folder = fake_provider.drafts[-1]
     assert to == ["anna@example.com"] and subject == "Re: Hello"
@@ -263,7 +263,7 @@ async def test_a_plain_send_reports_no_thread(app_with_tools, fake_provider):
 async def test_reply_arguments_are_in_the_tool_schema(app_with_tools):
     """A client can only reply if the schema tells it how."""
     tools = {t.name: t for t in await app_with_tools.list_tools()}
-    for name in ("mail_send", "mail_draft"):
+    for name in ("mail_send", "mail_create_draft"):
         props = tools[name].inputSchema.get("properties", {})
         assert {"reply_to_uid", "reply_to_folder", "reply_all"} <= set(props), name
 

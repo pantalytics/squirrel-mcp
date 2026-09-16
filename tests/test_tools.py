@@ -16,7 +16,7 @@ EXPECTED_TOOLS = {
     "mail_read",
     "mail_read_chunk",
     "mail_get_attachment",
-    "mail_draft",
+    "mail_create_draft",
     "mail_edit_draft",
     "mail_send",
     "mail_send_draft",
@@ -220,6 +220,6 @@ async def test_flag_requires_at_least_one_uid(app_with_tools, fake_provider):
 
 async def test_draft_reports_the_from_address(app_with_tools):
     result = await app_with_tools.call_tool(
-        "mail_draft", {"to": "x@y.com", "subject": "hi", "body": "yo"}
+        "mail_create_draft", {"to": "x@y.com", "subject": "hi", "body": "yo"}
     )
     assert "me@example.com" in str(result)

@@ -36,7 +36,7 @@ Mail tools (all prefixed `mail_`):
   tells you the total length and how to page the rest.
 - mail_read_chunk: fetch the next slice of a large body (offset + length).
 - mail_get_attachment: download one attachment by its index (from mail_read).
-- mail_draft / mail_edit_draft: create or update a draft in the Drafts folder.
+- mail_create_draft / mail_edit_draft: create or update a draft in the Drafts folder.
 - mail_send: send a message. DESTRUCTIVE/OUTGOING. It requires confirm=true and
   will refuse otherwise. ALWAYS show the user the exact recipients, subject,
   body and the account it will be sent from, and get explicit approval BEFORE
@@ -52,7 +52,7 @@ Mail tools (all prefixed `mail_`):
   and leaves the draft behind, which is exactly the duplicate the user sees in
   their mailbox afterwards. `draft_removed: false` means it was sent but the
   draft is still there: say so, offer to delete it, and never send it again.
-- ATTACHMENTS go out via the `attachments` argument on mail_send, mail_draft and
+- ATTACHMENTS go out via the `attachments` argument on mail_send, mail_create_draft and
   mail_edit_draft. Two forms, and the choice matters: to send on a file that is
   already in the mailbox -- forwarding an invoice, passing on a contract -- use
   `{"source_uid": "<uid>", "source_index": <n>, "source_folder": "INBOX"}` with
@@ -74,7 +74,7 @@ Mail tools (all prefixed `mail_`):
   flow of the text, not to dress up a message the user asked to keep plain.
 - REPLYING is not the same as sending: whenever the user is answering a message
   they just read, pass that message's uid as `reply_to_uid` (plus the
-  `reply_to_folder` it lives in) to mail_send or mail_draft. Only that puts the
+  `reply_to_folder` it lives in) to mail_send or mail_create_draft. Only that puts the
   message inside the existing thread; a subject starting with "Re:" does not --
   Gmail may guess it back into the conversation, Outlook generally will not,
   and the user ends up with a second thread they did not ask for. With
@@ -108,11 +108,11 @@ contacts_list_addressbooks first.
   list replaces every address ([] clears them); omitting it leaves them alone.
   contacts_search does not carry addresses; read the contact for those.
 
-Calendar tools (`calendar_*`): calendar_list_calendars · calendar_search_events
-(ISO date window, defaults to ~±6 months) · calendar_read_event · calendar_create_event
-/ calendar_update_event / calendar_delete_event (all writes need confirm=true).
+Calendar tools (`calendar_*`): calendar_list_calendars · calendar_search
+(ISO date window, defaults to ~±6 months) · calendar_read · calendar_create
+/ calendar_update / calendar_delete (all writes need confirm=true).
 Dates/times are ISO 8601 (YYYY-MM-DD for all-day, otherwise full datetime).
-- calendar_create_event takes `attendees` (email addresses), which turns the event
+- calendar_create takes `attendees` (email addresses), which turns the event
   into a meeting and SENDS THEM AN INVITATION -- read the list back to the user
   before confirming, the same way you would recipients of a mail.
 - `online_meeting=true` asks the calendar to add a conference link (a Teams meeting
@@ -135,7 +135,7 @@ Dates/times are ISO 8601 (YYYY-MM-DD for all-day, otherwise full datetime).
 
 Good habits:
 - Resolve folder/addressbook/calendar ids with the matching list_* tool first.
-- Prefer drafting (mail_draft) and letting the user review over sending directly,
+- Prefer drafting (mail_create_draft) and letting the user review over sending directly,
   then mail_send_draft to put that same reviewed message out.
 - ALWAYS show the user exactly what will change and get approval before calling
   any write tool (send/move/create/update/delete) with confirm=true.

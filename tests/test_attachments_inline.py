@@ -247,7 +247,7 @@ async def test_send_hands_the_html_body_to_the_provider(app_with_tools, fake_pro
 
 async def test_a_draft_carries_the_html_body_too(app_with_tools, fake_provider):
     await app_with_tools.call_tool(
-        "mail_draft",
+        "mail_create_draft",
         {"to": "a@b.com", "subject": "Hi", "body": "text", "body_html": "<p>rich</p>"},
     )
     assert fake_provider.draft_kwargs[-1]["body_html"] == "<p>rich</p>"

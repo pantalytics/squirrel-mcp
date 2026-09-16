@@ -37,7 +37,7 @@ is configured.
 | `mail_read` | Read one message (large bodies are truncated) | read-only |
 | `mail_read_chunk` | Fetch the next slice of a large body | read-only |
 | `mail_get_attachment` | Download one attachment | read-only |
-| `mail_draft` / `mail_edit_draft` | Create / update a draft in Drafts, attachments included | writes to Drafts |
+| `mail_create_draft` / `mail_edit_draft` | Create / update a draft in Drafts, attachments included | writes to Drafts |
 | `mail_send` | Send a message, attachments included — **requires `confirm=true`** | ⚠️ outgoing |
 | `mail_send_draft` | Send a draft that already exists, then take it out of Drafts — **requires `confirm=true`** | ⚠️ outgoing |
 | `mail_move` | Move messages between folders — **requires `confirm=true`** | ⚠️ mutating |
@@ -45,7 +45,7 @@ is configured.
 | `mail_flag` | Flag / unflag messages — the star, `flagged=false` clears it | reversible |
 | `mail_mark_read` | Mark messages read / unread, `read=false` clears it | reversible |
 
-Drafting and sending are the other two halves: `mail_draft` writes the message,
+Drafting and sending are the other two halves: `mail_create_draft` writes the message,
 the user reads it, and `mail_send_draft` puts *that* message on the wire and
 removes it from Drafts. It takes a uid and nothing else on purpose — a draft is
 already a complete message, so re-typing its text into `mail_send` would send a
@@ -69,14 +69,14 @@ message went. It is the delete key, not an erase: nothing is expunged, so
 `mail_move` brings it back.
 
 **Attachments** go both ways. `mail_read` lists them and `mail_get_attachment`
-downloads one; sending takes an `attachments` list on `mail_send`, `mail_draft`
+downloads one; sending takes an `attachments` list on `mail_send`, `mail_create_draft`
 and `mail_edit_draft`. Each entry either points at a file already in the mailbox
 — `{"source_uid": "412", "source_index": 0}`, which is how forwarding works and
 never copies the bytes through the AI client — or carries its own
 `{"filename": ..., "content_base64": ...}`. Editing a draft keeps the files it
 already has unless you say otherwise.
 
-**Replies land in the thread.** `mail_send` and `mail_draft` take a
+**Replies land in the thread.** `mail_send` and `mail_create_draft` take a
 `reply_to_uid` (the message being answered, plus the `reply_to_folder` it lives
 in), and the reply goes out carrying the `In-Reply-To` and `References` headers
 every mail client uses to build a conversation. A subject beginning with "Re:"
@@ -98,9 +98,9 @@ never an all-in-one dump.
 `contacts_*`: `contacts_list_addressbooks` · `contacts_search` (paginated) ·
 `contacts_read` · `contacts_create` / `contacts_update` / `contacts_delete`.
 
-`calendar_*`: `calendar_list_calendars` · `calendar_search_events` (ISO date
-window) · `calendar_read_event` · `calendar_create_event` / `calendar_update_event`
-/ `calendar_delete_event`.
+`calendar_*`: `calendar_list_calendars` · `calendar_search` (ISO date
+window) · `calendar_read` · `calendar_create` / `calendar_update`
+/ `calendar_delete`.
 
 All writes require `confirm=true`. Both pillars reuse the same account credentials
 as mail (most providers let one password cover IMAP/SMTP, CardDAV and CalDAV) and
