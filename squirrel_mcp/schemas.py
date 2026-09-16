@@ -176,6 +176,15 @@ class SendResult(BaseModel):
         default=None,
         description="Folder the copy was filed in (pass it to mail_search to find it)",
     )
+    draft_removed: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Only from mail_send_draft: whether the draft was taken out of the "
+            "Drafts folder after it went out. False means the message WAS sent "
+            "and the draft is still sitting there -- say so and offer to delete "
+            "it; never send it a second time. Null from every other send."
+        ),
+    )
 
 
 class MoveResult(BaseModel):

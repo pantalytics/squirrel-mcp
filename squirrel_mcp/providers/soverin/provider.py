@@ -214,6 +214,45 @@ class SoverinMailProvider:
         result["sent_folder"] = folder
         return result
 
+    def send_draft(self, folder: str, uid: str) -> dict:
+        """Send the draft at ``uid`` and take it out of ``folder``.
+
+        The third thing only this class can do, after ``_reply_headers`` and
+        ``_file_sent_copy``, and for the same reason: the message lives on the
+        IMAP side and the wire is on the SMTP side. What goes out is the draft
+        itself, byte for byte, so a reviewed message is the message that is
+        sent -- see ``smtp.send_existing`` for the two headers that are not.
+
+        Removing the draft is the last step and, like the Sent copy, is never
+        allowed to fail the send: the mail is with the recipient by then, so
+        raising would report a delivered message as undelivered and invite a
+        retry that sends it twice. ``draft_removed`` carries the outcome up
+        instead.
+        """
+        msg, attachments = self._imap.fetch_outgoing(folder, uid)
+        subject = msg["Subject"] or ""
+        result = self._smtp.send_existing(msg)
+        raw = result.pop("raw", b"")
+        sent_at = result.pop("sent_at", None)
+        saved, sent_folder = self._file_sent_copy(raw, result.get("message_id"), sent_at)
+        result["saved_to_sent"] = saved
+        result["sent_folder"] = sent_folder
+        result["subject"] = subject
+        result["attachments"] = attachments
+        result["draft_removed"] = self._remove_draft(folder, uid)
+        return result
+
+    def _remove_draft(self, folder: str, uid: str) -> bool:
+        try:
+            self._imap.delete_message(folder, uid)
+        except Exception as exc:  # noqa: BLE001 - the mail is already gone
+            logger.warning(
+                "Draft uid %s in %s was sent but could not be removed: %s",
+                uid, folder, exc,
+            )
+            return False
+        return True
+
     def _file_sent_copy(
         self,
         raw: bytes,

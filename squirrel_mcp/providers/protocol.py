@@ -333,6 +333,31 @@ class MailProvider(Protocol):
         """
         ...
 
+    def send_draft(self, folder: str, uid: str) -> dict:
+        """Send a draft that already exists, and take it out of ``folder``.
+
+        Returns what ``send`` returns plus ``'subject'``, ``'attachments'``
+        (filenames) and ``'draft_removed'``.
+
+        **What goes out is the draft, not a copy of its fields.** The tool
+        layer deliberately hands over a uid and nothing else: a draft is
+        already a complete message, and anything rebuilt from the parts the
+        tools model would lose the rest -- the MIME tree an embedded image
+        needs, the threading that makes it a reply, a header another client
+        wrote. The user approved what they read; that is what must leave.
+
+        The same never-fatal rule as the Sent copy applies to removing the
+        draft, and for the same reason: by then the message is with the
+        recipient, so a failure here is reported in ``draft_removed`` rather
+        than raised. Raising would say a delivered message was not delivered
+        and invite a retry that sends it twice.
+
+        The tool layer reads this through ``getattr(provider, "send_draft",
+        None)`` and refuses with an alternative when a backend has not got it,
+        so an older backend is told about rather than crashed into.
+        """
+        ...
+
     def move(self, folder: str, uids: List[str], destination: str) -> int:
         """Move messages from ``folder`` to ``destination``. Returns count moved."""
         ...
