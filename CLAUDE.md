@@ -212,6 +212,30 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   a decoy English "Archive" the server did not flag), the caching, the absent
   expunge and the tool's confirm gate; the GreenMail e2e deletes for real and
   reads the message back out of Trash.
+- **A folder could be filed into but not made.** `mail_list_folders` read them
+  and `mail_move` filed into them, so "put these in a folder called
+  Belastingdienst" needed another mail client first. `mail_create_folder` /
+  `mail_rename_folder` / `mail_delete_folder` close that, and two decisions
+  shape them. **A path is not the caller's to type**: the delimiter is "/" on
+  one server and "." on the next, and a mailbox that keeps everything under
+  INBOX refuses a bare top-level name -- so create takes a `parent` *folder*
+  and `imap.create_folder` joins it with the delimiter it read off LIST, the
+  same not-knowable rule as the roles above (a rename given a bare name keeps
+  the folder where it is for the same reason). **And delete is the one
+  genuinely irreversible thing in this package**: IMAP's DELETE takes the
+  folder's messages with it and no Trash catches them, which is exactly what
+  `mail_delete` was written *not* to do. So `delete_folder` refuses a folder
+  that still holds mail or sub-folders and says how many -- empty it the
+  recoverable way first and the folder then goes. The confirm gate answers
+  "did the user ask for this"; the refusal answers "can they get it back", and
+  they are not the same question, so it has both. INBOX and the five
+  special-use folders are refused outright rather than gated, and the role is
+  read from the flags *or* from `special_folder`'s fallback name, because a
+  server advertising no SPECIAL-USE still has the Trash this package files
+  deletes into. Creating a folder that already exists is not an error; it
+  comes back `created=False`. `tests/test_folder_admin.py` pins the joining,
+  the refusals and the emptiness check; the GreenMail e2e makes, fills,
+  renames and deletes one against a real server.
 - **A meeting is not an appointment, and CalDAV only does the second.**
   `calendar_create` takes `attendees` and `online_meeting`, and both are
   gated on a capability the provider declares -- `supports_attendees` /

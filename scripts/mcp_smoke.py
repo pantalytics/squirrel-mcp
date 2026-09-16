@@ -28,6 +28,9 @@ EXPECTED_TOOLS = {
     "mail_delete",
     "mail_flag",
     "mail_mark_read",
+    "mail_create_folder",
+    "mail_rename_folder",
+    "mail_delete_folder",
 }
 
 

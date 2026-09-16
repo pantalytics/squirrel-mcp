@@ -44,12 +44,24 @@ is configured.
 | `mail_delete` | The delete key: move to the account's own Trash — **requires `confirm=true`** | ⚠️ mutating |
 | `mail_flag` | Flag / unflag messages — the star, `flagged=false` clears it | reversible |
 | `mail_mark_read` | Mark messages read / unread, `read=false` clears it | reversible |
+| `mail_create_folder` | Make a folder (`parent` puts it inside another one) | reversible |
+| `mail_rename_folder` | Rename a folder; its mail and sub-folders come along | reversible |
+| `mail_delete_folder` | Delete an **empty** folder — **requires `confirm=true`** | ⚠️ permanent |
 
 Drafting and sending are the other two halves: `mail_create_draft` writes the message,
 the user reads it, and `mail_send_draft` puts *that* message on the wire and
 removes it from Drafts. It takes a uid and nothing else on purpose — a draft is
 already a complete message, so re-typing its text into `mail_send` would send a
 second, subtly different one and leave the reviewed draft behind.
+
+Folders can be made as well as filed into: `mail_create_folder` takes a name and
+an optional `parent` folder rather than a path, because the delimiter is "/" on
+one server and "." on the next and some mailboxes keep everything under INBOX.
+`mail_delete_folder` is the strictest tool here — deleting a folder takes its
+messages with it and no Trash catches them, so it only deletes an *empty* one
+and says how many messages are in the way. Empty it with `mail_delete` first
+(that is the recoverable kind) and the folder then goes. INBOX and the folders
+with a role are refused outright.
 
 Marking and finding are two halves of one thing: `mail_flag` sets the star and
 `mail_search(flagged_only=true)` gets those messages back; `mail_mark_read`

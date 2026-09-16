@@ -218,6 +218,33 @@ class DeleteResult(BaseModel):
     uids: List[str] = Field(default_factory=list)
 
 
+class FolderCreateResult(BaseModel):
+    folder: str = Field(
+        description=(
+            "The folder's full name as the server now spells it -- a child "
+            "carries its parent and the server's own delimiter, so pass THIS "
+            "as the 'folder' argument of other tools, not the name you asked for."
+        )
+    )
+    created: bool = Field(
+        description=(
+            "False means a folder of that name was already there and nothing "
+            "was changed. Say so rather than reporting a new folder."
+        )
+    )
+
+
+class FolderRenameResult(BaseModel):
+    folder: str = Field(description="The folder's new full name")
+    previous_name: str = Field(description="What it was called before")
+
+
+class FolderDeleteResult(BaseModel):
+    folder: str = Field(
+        description="The folder that is gone. It was empty; no mail was lost."
+    )
+
+
 class FlagResult(BaseModel):
     changed: int = Field(
         description="Number of messages the flag change was applied to "
