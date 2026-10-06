@@ -17,7 +17,8 @@ whose tool call refused.
 
 from __future__ import annotations
 
-from typing import Any, List, Optional, Tuple
+import inspect
+from typing import Any, Callable, List, Optional, Tuple
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -93,18 +94,29 @@ class CalendarToolHandler:
             start: Optional[str] = None,
             end: Optional[str] = None,
             query: Optional[str] = None,
+            attendee: Optional[str] = None,
             limit: Optional[int] = None,
         ) -> EventList:
             """Search a calendar's events in a date window (ISO dates), newest first.
 
-            Defaults to roughly ±6 months when start/end are omitted. ``query`` filters
-            on the event title.
+            Defaults to roughly ±6 months when start/end are omitted. ``query``
+            filters on the event title; ``attendee`` on who is on the event
+            (organizer included) by a name or an address, so "meetings with
+            Iris" is ``attendee="iris"`` and needs nothing in the title.
             """
             provider, sub = await self._get_provider()
             eff_limit = max(1, min(limit or 50, 200))
+            kwargs: dict = {}
+            if attendee:
+                if not _takes_attendee(provider.search_events):
+                    raise ValidationError(
+                        "This calendar's backend cannot filter by attendee. Search "
+                        "by title or date instead and read the events for who is on them."
+                    )
+                kwargs["attendee"] = attendee
             events = await run_blocking(
                 provider, provider.search_events, calendar,
-                start=start, end=end, query=query, limit=eff_limit,
+                start=start, end=end, query=query, limit=eff_limit, **kwargs,
             )
             self._track_usage(sub, "calendar_search")
             return EventList(
@@ -196,6 +208,21 @@ class CalendarToolHandler:
             await run_blocking(provider, provider.delete_event, calendar, uid)
             self._track_usage(sub, "calendar_delete")
             return EventWriteResult(uid=uid, calendar=calendar, status="Event deleted")
+
+
+def _takes_attendee(search_events: Callable) -> bool:
+    """Whether this backend's ``search_events`` reads the attendee filter.
+
+    Asked of the signature, as the mail tools ask about ``parsed``: the filter
+    is an addition to the protocol, and a backend from before it cannot declare
+    anything. The answer decides between forwarding and refusing -- never
+    between forwarding and silently dropping, because a dropped filter turns
+    "events with Iris" into "every event" and reports it as the match.
+    """
+    try:
+        return "attendee" in inspect.signature(search_events).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _invitation(provider, attendees, online_meeting: bool) -> List[str]:

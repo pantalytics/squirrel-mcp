@@ -53,6 +53,33 @@ def _parse_dt(value: str):
         raise ProviderError(f"Invalid ISO date/time: {value!r}") from e
 
 
+def _participants(comp) -> List[str]:
+    """Every name and address on an event: ATTENDEE lines and the ORGANIZER.
+
+    Each property is a ``mailto:`` URI with the display name riding along as
+    the ``CN`` parameter, so both are offered -- "iris" should find a meeting
+    whether the calendar wrote ``CN=Iris van 't Klooster`` or only her address.
+    """
+    out: List[str] = []
+    for key in ("attendee", "organizer"):
+        values = comp.get(key)
+        if not values:
+            continue
+        if not isinstance(values, list):
+            values = [values]
+        for value in values:
+            out.append(str(value))
+            cn = getattr(value, "params", {}).get("CN")
+            if cn:
+                out.append(str(cn))
+    return out
+
+
+def _has_participant(obj, needle: str) -> bool:
+    needle = needle.lower()
+    return any(needle in p.lower() for p in _participants(obj.icalendar_component))
+
+
 class SoverinCalendarProvider:
     """CalendarProvider backed by CalDAV (Soverin / any RFC-compliant server)."""
 
@@ -140,6 +167,7 @@ class SoverinCalendarProvider:
         start: Optional[str] = None,
         end: Optional[str] = None,
         query: Optional[str] = None,
+        attendee: Optional[str] = None,
         limit: int = 50,
     ) -> List[EventSummary]:
         cal = self._calendar_by_id(calendar)
@@ -154,6 +182,11 @@ class SoverinCalendarProvider:
         except Exception as e2:  # noqa: BLE001
             raise ProviderError(f"Event search failed: {e2}") from e2
 
+        # CalDAV's REPORT filters on properties, not on who is on the event,
+        # so the attendee match happens here on the components the window
+        # returned -- the same client-side pass the title query already makes.
+        if attendee:
+            found = [obj for obj in found if _has_participant(obj, attendee)]
         summaries = [self._to_summary(obj, calendar) for obj in found]
         if query:
             q = query.lower()

@@ -256,6 +256,24 @@ namespaces are reserved so they plug in later as sibling providers + tool mixins
   retry that books it twice. `attendees` accepts the shapes mail recipients
   accept (`as_str_list`). `tests/test_calendar_invitations.py` pins the
   refusals and the capable path.
+- **An event is found by who is on it, not only by what it is called.**
+  `calendar_search` took a `query` against the title and nothing else, so
+  "my sessions with the coach" meant paging a six-month window and reading
+  every event. `attendee` is the second filter: a case-insensitive substring
+  of an address *or* a display name, matched against the ATTENDEE lines and
+  the ORGANIZER -- the person who invited you is a participant whether or not
+  the calendar files them under ATTENDEE, and one word of a name is enough.
+  Both backends filter client-side on the window they already fetched (CalDAV
+  REPORTs filter on properties, Graph's `calendarView` on nothing useful), the
+  same pass the title query makes. It is an **additive keyword on
+  `CalendarProvider.search_events`**, offered by signature inspection exactly
+  as `parsed` is on `MailProvider.search` -- and, unlike `parsed`, *refused*
+  when the backend does not name it: a widened search is still a search, but
+  a dropped attendee filter turns "events with Iris" into "every event" and
+  reports it as the match. The admin package's Graph provider reads
+  `attendees` + `organizer` off the summary select only when the filter is
+  set. `tests/test_calendar_search_attendee.py` pins the forwarding, the
+  refusal and the three things CalDAV matches on.
 - **Sending an attachment is a MIME concern, not a protocol feature.** Neither
   SMTP nor IMAP knows what an attachment is -- both carry one opaque RFC 5322
   blob -- so the whole outgoing mechanism is `mime.build_email` handing files to

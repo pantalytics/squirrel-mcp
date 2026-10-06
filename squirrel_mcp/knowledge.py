@@ -117,8 +117,11 @@ contacts_list_addressbooks first.
   contacts_search does not carry addresses; read the contact for those.
 
 Calendar tools (`calendar_*`): calendar_list_calendars · calendar_search
-(ISO date window, defaults to ~±6 months) · calendar_read · calendar_create
-/ calendar_update / calendar_delete (all writes need confirm=true).
+(ISO date window, defaults to ~±6 months; `query` matches the title, `attendee`
+matches who is on the event -- a name or an address, organizer included -- so
+"my meetings with Iris" is `attendee="iris"`, not a title search) ·
+calendar_read · calendar_create / calendar_update / calendar_delete (all
+writes need confirm=true).
 Dates/times are ISO 8601 (YYYY-MM-DD for all-day, otherwise full datetime).
 - calendar_create takes `attendees` (email addresses), which turns the event
   into a meeting and SENDS THEM AN INVITATION -- read the list back to the user

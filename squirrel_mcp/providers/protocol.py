@@ -583,9 +583,21 @@ class CalendarProvider(Protocol):
         start: Optional[str] = None,
         end: Optional[str] = None,
         query: Optional[str] = None,
+        attendee: Optional[str] = None,
         limit: int = 50,
     ) -> List[EventSummary]:
-        """Events in a calendar within [start, end] (ISO dates), newest first."""
+        """Events in a calendar within [start, end] (ISO dates), newest first.
+
+        ``query`` matches the title. ``attendee`` matches *who is on the
+        event* -- organizer included, since the person who invited you is a
+        participant whether or not the calendar files them under ATTENDEE --
+        as a case-insensitive substring of an address or a display name. The
+        tool layer offers it only to a backend whose signature names it
+        (``inspect.signature``, like ``parsed`` on ``MailProvider.search``) and
+        refuses otherwise: a backend that silently dropped the filter would
+        answer "every event" to "events with Iris", which is worse than no
+        answer.
+        """
         ...
 
     def get_event(self, calendar: str, uid: str) -> EventDetail: ...
